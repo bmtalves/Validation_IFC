@@ -1,6 +1,6 @@
-# SIMBA 2.1 Validation Tool
+# Validation_IFC
 
-Checks an IFC model against Statsbygg's SIMBA 2.1 requirements and reports what is missing or wrong.
+Checks an IFC model against a client's BIM requirements: Statsbygg's SIMBA 2.1 requirements, or Oslobygg's BIM requirements (architects, ARK, so far; see [Oslobygg](#oslobygg)), and reports what is missing or wrong.
 
 The requirements are read from Statsbygg's own rule files in the `Simba Rules` folder, in either of two formats:
 
@@ -20,8 +20,8 @@ The tool doesn't let you edit other values. Missing or wrong information has to 
 ## Installation
 
 ```bash
-git clone https://github.com/bmtalves/Validation_Simba.git
-cd Validation_Simba
+git clone https://github.com/bmtalves/Validation_IFC.git
+cd Validation_IFC
 pip install ifcopenshell pytest
 ```
 
@@ -36,10 +36,16 @@ pip install ifcopenshell pytest
 Run from this folder:
 
 ```bash
-python Validation_Simba.py model.ifc
+python Validation_IFC.py model.ifc
 ```
 
-If both formats are there, the tool first asks which to use:
+If there are rules for both clients, the tool first asks whose to check against:
+
+```
+Rules for which client? (statsbygg/oslobygg)
+```
+
+For SIMBA, if both formats are there, it then asks which to use:
 
 ```
 Rules format? mvdXML has the .1/.5/.9 steps, IDS covers every discipline (mvdxml/ids)
@@ -57,20 +63,22 @@ Validate against (1-10):
 
 With IDS it asks for the phase (B3.1, B3.2, B4.1, B5.1) and then the discipline (acoustical, architectural, electrical, environmental material, fire safety, interiors, landscaping, mechanical, security, structural, water supply and sewage).
 
-To use one specific rules file instead:
+For Oslobygg it asks for the phase: Konseptvalg, Forprosjekt, Detaljering or Som bygget.
+
+To use one specific rules file instead (a file in `Oslobygg Rules` is checked as Oslobygg):
 
 ```bash
-python Validation_Simba.py model.ifc rules.mvdxml
-python Validation_Simba.py model.ifc rules.ids
+python Validation_IFC.py model.ifc rules.mvdxml
+python Validation_IFC.py model.ifc rules.ids
 ```
 
 ### The steps
 
 | Step | Prompt | Notes |
 |---|---|---|
-| Old status values | `Copy DesignedStatus into ProcessStatus?` | Shown only if the model has `NOSSB_Process.DesignedStatus`. Objects that already have a ProcessStatus are skipped, and the old values are kept. |
+| Old status values | `Copy DesignedStatus into ProcessStatus?` | SIMBA only. Shown only if the model has `NOSSB_Process.DesignedStatus`. Objects that already have a ProcessStatus are skipped, and the old values are kept. |
 | Summary | – | One `OK` / `FAIL` line per requirement with the number of failed and missing objects. |
-| Report | `Export a report? (csv/html dashboard/both/no)` | Files are named `validation <model> <phase>.csv` / `.html`, e.g. `validation house B5.1.1.csv` (mvdXML) or `validation house B5.1 architectural.csv` (IDS). The CSV has one row per object and requirement, with the value found and its status. |
+| Report | `Export a report? (csv/html dashboard/both/no)` | Files are named `validation <model> <phase>.csv` / `.html`, e.g. `validation house B5.1.1.csv` (mvdXML) or `validation house B5.1 architectural.csv` (IDS), and `validation house Forprosjekt ARK.csv` for Oslobygg. The CSV has one row per object and requirement, with the value found and its status. |
 | Save | `Save as new file?` | Only shown if status values were copied. Default name is `<model>_updated.ifc`. |
 
 You can answer prompts with the first letter (`y`, `n`, `c`, `h`, `b`).
@@ -177,15 +185,47 @@ Statsbygg's IDS files are IDS 0.9.6, exported from BIMQ. The tool reads the part
 
 On the architect's model, IDS B4.1 and mvdXML B4.1.9 give the same result for every check they share; mvdXML adds the PredefinedType and georeferencing checks.
 
+## Oslobygg
+
+Oslobygg (Oslo kommune) publishes its requirements on [skok.no](https://skok.no/Manualer) in the BIM-manual and the *BIM egenskapsmatrise*, an Excel sheet with one tab per discipline and a column per phase. It isn't a file a program can read as it is: objects are named in Norwegian ("Yttervegger", "Bjelker"), not as IFC classes, and properties are written as `FireRating (f.eks: EI60)`. So `Oslobygg Rules/make_oslobygg_ids.py` converts it into IDS files, one per phase, that the tool reads like any other IDS:
+
+```bash
+cd "Oslobygg Rules"
+python make_oslobygg_ids.py
+```
+
+Run it again when Oslobygg publishes a new matrix. It prints what it corrected or left out. Only the ARK tab is converted so far; RIB, RIV and RIE need their objects added to `OBJECTS` in the script.
+
+How the matrix is read:
+
+- **Objects to IFC classes:** the `OBJECTS` table in the script, e.g. *Bjelker* = IfcBeam, *System- og akustisk himling* = IfcCovering CEILING, *Glasstak* = IfcWindow SKYLIGHT, *Primærkonstruksjoner* (yttertak) = IfcRoof.
+- **Exterior and interior:** walls, doors, windows and glass facades have different requirements outside and inside. They are told apart by `IsExternal`, so an object without it would be checked by neither. That is why `IsExternal` is its own requirement for all of them (*Vegger (alle)*, *Dører (alle)* …), and fixing it brings the rest of the checks in.
+- **Property names and types** come from IFC4's own property sets. Misspellings are corrected (`HandicapAccesible` → `HandicapAccessible`). Properties IFC4 doesn't have (`Pset_SpaceCommon.Category`, `Compartmentation` on curtain walls and roofs, the `NOOBF_*` sets) keep the matrix's name; those marked *(True/False)* must be booleans, the others can be any type.
+- **"f.eks." values** are examples, so they only mean "must have a value". They are shown as the requirement's description on the dashboard.
+- **Left out:** rows marked *Ikke kravsatt*, and the groups with only general text (61 Prefabrikerte rom, 66/67 spesialutrustning, 72 Utendørs konstruksjoner).
+
+Added to every phase, from the *Felles* tab and the BIM-manual:
+
+| Requirement | Object | Must be |
+|---|---|---|
+| Forvaltnings-ID | IfcProject Name | 6 digits, e.g. `200635` |
+| Tomtenavn | IfcSite Name | filled in |
+| Bygg-ID | IfcBuilding Name | 2 digits, `01`–`99` |
+| Etasjenavn | IfcBuildingStorey Name | filled in |
+| Romnummer | IfcSpace Name | 9 characters, e.g. `01-E01001` (manual 5.4.1) |
+| Romnavn | IfcSpace LongName | filled in |
+
+The converted files are the tool's reading of the matrix, not official Oslobygg files. The manual says the matrix is guidance and each project fixes its own requirements in its BIM gjennomføringsplan, so edit the IDS files (or `OBJECTS` in the script) to match the project. The SIMBA-only steps (copying DesignedStatus, the IFC4 warning) are skipped for Oslobygg; `allowed_values.csv` and `cross_checks.csv` apply to both.
+
 ## Files
 
 ```
-Validation_Simba/
-├── Validation_Simba.py           the tool
-├── dashboard_template.html       layout of the HTML dashboard (must stay next to Validation_Simba.py)
+Validation_IFC/
+├── Validation_IFC.py           the tool
+├── dashboard_template.html       layout of the HTML dashboard (must stay next to Validation_IFC.py)
 ├── allowed_values.csv            your lists of allowed values (optional)
 ├── cross_checks.csv              properties that must contain other properties' values (optional)
-├── test_validation_simba.py      tests
+├── test_validation_ifc.py      tests
 ├── README.md
 └── Simba Rules/
     ├── statsbygg-template-simba-2-1-…_b3-1_architect-ark.mvdxml   B3.1 Skisseprosjekt
@@ -193,14 +233,18 @@ Validation_Simba/
     ├── statsbygg-template-simba-2-1-…_b4-1_architect-ark.mvdxml   B4.1 Detaljprosjekt
     ├── statsbygg-template-simba-2-1-…_b5-1_architect-ark.mvdxml   B5.1 Ferdigstillelse
     └── SIMBA-2.1-kravsett-ALLE-FAG-IDS-096/                          44 IDS files: 4 phases × 11 disciplines
+└── Oslobygg Rules/
+    ├── BIM egenskapsmatrise.xlsx      Oslobygg's property matrix (from skok.no)
+    ├── make_oslobygg_ids.py           converts it into the IDS files below
+    └── oslobygg_1-konseptvalg_ark.ids … oslobygg_4-som_bygget_ark.ids
 ```
 
-Every `*.mvdxml` and `*.ids` file in `Simba Rules` (or next to `Validation_Simba.py`), and in folders one level inside them, is picked up automatically.
+Every `*.mvdxml` and `*.ids` file in `Simba Rules` (or next to `Validation_IFC.py`), and in folders one level inside them, is picked up automatically as SIMBA rules; those in `Oslobygg Rules` as Oslobygg rules.
 
 ## Tests
 
 ```bash
-python -m pytest test_validation_simba.py
+python -m pytest test_validation_ifc.py
 ```
 
 The tests build small IFC4 models in memory and cover:
@@ -214,6 +258,7 @@ The tests build small IFC4 models in memory and cover:
 - allowed values and measure limits
 - cross-checks
 - finding the rules files
+- Oslobygg: exterior/interior filters, the room number pattern, properties without a value type, and the converted files
 
 ## Limitations
 
@@ -221,4 +266,5 @@ The tests build small IFC4 models in memory and cover:
 - **IDS:** no .1/.5/.9 steps and no PredefinedType or georeferencing checks (they aren't in the files), and 59 specifications without an applicability are skipped. Only the parts of IDS that Statsbygg's files use are read (entity, attribute and property facets).
 - **Old date not copied:** `NOSSB_Process.DesignedStatusDate` has no equivalent in SIMBA 2.1.
 - **3D model:** whoever opens the dashboard also needs the IFC file, and an internet connection for the viewer libraries. Large models need a computer with plenty of memory (each worker reads its own copy of the file, so a 300 MB model can use 1.5 GB or more while loading).
+- **Oslobygg:** only ARK so far. Room numbers are checked for their format, not for being unique. The file naming rule and NTM/NN2000 georeferencing in the BIM-manual aren't checked.
 - **Rule syntax:** only the mvdXML rule syntax used in the Statsbygg files is supported, not the full mvdXML standard.

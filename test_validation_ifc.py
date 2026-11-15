@@ -4,9 +4,9 @@ import pytest
 import ifcopenshell
 import ifcopenshell.api
 
-import Validation_Simba
-from Validation_Simba import Atom, Checker, find_required, get_arguments, make_label, parse_parameters, write_property, find_old_status
-from Validation_Simba import Concept, validate, dashboard_data, find_rule_files, load_allowed_values
+import Validation_IFC
+from Validation_IFC import Atom, Checker, find_required, get_arguments, make_label, parse_parameters, write_property, find_old_status
+from Validation_IFC import Concept, validate, dashboard_data, find_rule_files, load_allowed_values
 
 PROCESS_STATUS = ("rule", parse_parameters(
     "Set[Value]='NONS_Process' AND PropertyName[Value]='ProcessStatus' AND Value[Exists]=TRUE AND Value[Type]='IFCLABEL'"))
@@ -90,12 +90,12 @@ def test_find_old_status():
 def test_migrate_designed_status(monkeypatch):
     model, typed_wall, lone_wall = make_model()
     write_property(model, typed_wall, "NOSSB_Process", "DesignedStatus", "IFCLABEL", "350")
-    monkeypatch.setattr(Validation_Simba, "ask_yes_no", lambda prompt: True)
-    assert Validation_Simba.migrate_designed_status(model) == True
+    monkeypatch.setattr(Validation_IFC, "ask_yes_no", lambda prompt: True)
+    assert Validation_IFC.migrate_designed_status(model) == True
     assert Checker(model).evaluate(PROCESS_STATUS, typed_wall) == True
     assert Checker(model).evaluate(PROCESS_STATUS, lone_wall) == False
     # Nothing left to copy the second time
-    assert Validation_Simba.migrate_designed_status(model) == False
+    assert Validation_IFC.migrate_designed_status(model) == False
 
 
 def test_dashboard_data():
@@ -150,7 +150,7 @@ def test_status_missing_or_failed(tmp_path):
     assert statuses == {"AVA.001": "passed", "AVA.002": "missing", "AVA.003": "failed"}
 
     path = tmp_path / "report.csv"
-    Validation_Simba.export_csv(results, path)
+    Validation_IFC.export_csv(results, path)
     rows = {row["Name"]: (row["Value"], row["Validation"]) for row in csv.DictReader(open(path, encoding="utf-8-sig"))}
     assert rows == {"AVA.001": ("TRUE", "PASSED"), "AVA.002": ("", "MISSING"), "AVA.003": ("yes (IfcLabel)", "FAILED")}
 
@@ -259,7 +259,7 @@ IDS_FILE = """<?xml version="1.0" encoding="UTF-8"?>
 def test_load_ids(tmp_path, capsys):
     path = tmp_path / "x_ifc-4-add2_b5-1-architectural.ids"
     path.write_text(IDS_FILE, encoding="utf-8")
-    info, concepts, allowed = Validation_Simba.load_ids(path, {"200 Ramp": (("IFCRAMP",), None)})
+    info, concepts, allowed = Validation_IFC.load_ids(path, {"200 Ramp": (("IFCRAMP",), None, ())})
     assert "430 Thermostat" in capsys.readouterr().out  # no applicability anywhere: skipped, with a note
     assert [(c.group, c.label) for c in concepts] == [
         ("200 Wall", "Name"), ("200 Wall", "Pset_WallCommon.IsExternal"), ("200 Wall", "NOSSB_Security.Class"),
@@ -270,13 +270,13 @@ def test_load_ids(tmp_path, capsys):
     assert concepts[5].entities == ("IFCCOVERING", "IFCSLAB") and concepts[5].predefined == "CEILING"
     # "UNSET." is cleaned up; a one-value list is an example, not a rule
     assert allowed == {("NOSSB_Security", "Class"): ["LOW", "UNSET"]}
-    assert Validation_Simba.ids_phase(path, info) == ("B5.1", "architectural")
+    assert Validation_IFC.ids_phase(path, info) == ("B5.1", "architectural")
 
 
 def test_ids_rules_checked(tmp_path):
     path = tmp_path / "rules.ids"
     path.write_text(IDS_FILE, encoding="utf-8")
-    _, concepts, allowed = Validation_Simba.load_ids(path)
+    _, concepts, allowed = Validation_IFC.load_ids(path)
     model, typed_wall, lone_wall = make_model()
     standard_case = ifcopenshell.api.run("root.create_entity", model, ifc_class="IfcWallStandardCase", name="AVA.003")
     write_property(model, typed_wall, "NOSSB_Security", "Class", "IFCLABEL", "LOW")
@@ -296,12 +296,12 @@ def test_cross_check(tmp_path):
     csv_file = tmp_path / "cross_checks.csv"
     csv_file.write_text("Property,Must contain\n# comment,\n"
                         "NONS_Reference.RefString,NONS_Reference.RefLocStorey;NONS_Reference.RefCompOccNo\n", encoding="utf-8")
-    checks = Validation_Simba.load_cross_checks(csv_file)
+    checks = Validation_IFC.load_cross_checks(csv_file)
     assert checks == {("NONS_Reference", "RefString"): (("NONS_Reference", "RefLocStorey"), ("NONS_Reference", "RefCompOccNo"))}
 
     rule = ("rule", parse_parameters("Set[Value]='NONS_Reference' AND PropertyName[Value]='RefString' AND Value[Exists]=TRUE"))
     base = Concept("200 Wall", "IfcWall", "NONS_Reference.RefString", rule, None, ("property", "NONS_Reference", "RefString", "IFCLABEL"))
-    extra = Validation_Simba.cross_check_concepts([base, base], checks)
+    extra = Validation_IFC.cross_check_concepts([base, base], checks)
     assert len(extra) == 1 and extra[0].label == "NONS_Reference.RefString contents"
 
     model, typed_wall, lone_wall = make_model()
@@ -314,3 +314,90 @@ def test_cross_check(tmp_path):
     assert results["AVA.001"].status == "passed"
     assert results["AVA.002"].status == "failed" and "RefCompOccNo 07 not in it" in results["AVA.002"].value
     assert "AVA.003" not in results  # no RefString: its own requirement reports that
+
+
+# ---------- Oslobygg ----------
+
+OSLOBYGG_IDS = r"""<?xml version="1.0" encoding="UTF-8"?>
+<ids:ids xmlns:ids="http://standards.buildingsmart.org/IDS" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <ids:info><ids:title>Oslobygg test</ids:title><ids:milestone>Forprosjekt</ids:milestone></ids:info>
+  <ids:specifications>
+    <ids:specification name="23 Yttervegger">
+      <ids:applicability>
+        <ids:entity><ids:name><ids:simpleValue>IFCWALL</ids:simpleValue></ids:name></ids:entity>
+        <ids:property datatype="IFCBOOLEAN">
+          <ids:propertySet><ids:simpleValue>Pset_WallCommon</ids:simpleValue></ids:propertySet>
+          <ids:name><ids:simpleValue>IsExternal</ids:simpleValue></ids:name>
+          <ids:value><ids:simpleValue>true</ids:simpleValue></ids:value>
+        </ids:property>
+      </ids:applicability>
+      <ids:requirements>
+        <ids:property>
+          <ids:propertySet><ids:simpleValue>NOOBF_Wall</ids:simpleValue></ids:propertySet>
+          <ids:name><ids:simpleValue>Load</ids:simpleValue></ids:name>
+        </ids:property>
+      </ids:requirements>
+    </ids:specification>
+    <ids:specification name="Rom">
+      <ids:applicability>
+        <ids:entity><ids:name><ids:simpleValue>IFCSPACE</ids:simpleValue></ids:name></ids:entity>
+      </ids:applicability>
+      <ids:requirements>
+        <ids:attribute instructions=": Romnummer || Romnummer med ni tegn">
+          <ids:name><ids:simpleValue>Name</ids:simpleValue></ids:name>
+          <ids:value><xs:restriction base="xs:string"><xs:pattern value="\d{2}-[KUEMLT]\d{5}"/></xs:restriction></ids:value>
+        </ids:attribute>
+      </ids:requirements>
+    </ids:specification>
+  </ids:specifications>
+</ids:ids>
+"""
+
+
+def test_oslobygg_filters_patterns_and_any_type(tmp_path):
+    path = tmp_path / "oslobygg_2-forprosjekt_ark.ids"
+    path.write_text(OSLOBYGG_IDS, encoding="utf-8")
+    _, concepts, allowed = Validation_IFC.load_ids(path)
+    model, external_wall, no_is_external = make_model()  # AVA.001 is external through its type
+    run = ifcopenshell.api.run
+    internal = run("root.create_entity", model, ifc_class="IfcWall", name="AVA.003")
+    write_property(model, internal, "Pset_WallCommon", "IsExternal", "IFCBOOLEAN", False)
+    # No datatype in the IDS: any value type passes
+    write_property(model, external_wall, "NOOBF_Wall", "Load", "IFCINTEGER", 15)
+    for name in ("01-E01001", "101", None):
+        run("root.create_entity", model, ifc_class="IfcSpace", name=name)
+
+    results = validate(model, concepts, allowed)
+    walls = {r.element.Name: r.status for r in results if r.concept.group == "23 Yttervegger"}
+    # Only the external wall is checked: the internal one and the one without IsExternal are not
+    assert walls == {"AVA.001": "passed"}
+    rooms = {r.element.Name: (r.status, r.value) for r in results if r.concept.group == "Rom"}
+    assert rooms == {"01-E01001": ("passed", "01-E01001"), "101": ("failed", "101"), None: ("missing", None)}
+    data = dashboard_data(results, model, "m.ifc", "Forprosjekt ARK", allowed, "oslobygg")
+    room_requirement = next(r for r in data["requirements"] if r["label"] == "Romnummer")
+    assert room_requirement["allowed"] == [r"re:\d{2}-[KUEMLT]\d{5}"]
+    assert room_requirement["info"] == "Romnummer med ni tegn"
+    assert data["title"] == "Oslobygg validation"
+
+
+def test_oslobygg_phase_and_client(tmp_path):
+    assert Validation_IFC.ids_phase("oslobygg_4-som_bygget_ark.ids", {}) == ("Som bygget", "ARK")
+    assert Validation_IFC.client_of(Validation_IFC.OSLOBYGG_FOLDER / "x.ids") == "oslobygg"
+    assert Validation_IFC.client_of(tmp_path / "statsbygg_b3-1-architectural.ids") == "statsbygg"
+    # SIMBA rules leave out the Oslobygg folder
+    (tmp_path / "Oslobygg Rules").mkdir()
+    (tmp_path / "Oslobygg Rules" / "oslobygg_1-konseptvalg_ark.ids").write_text("x")
+    (tmp_path / "simba.ids").write_text("x")
+    found = find_rule_files([tmp_path], exclude=[tmp_path / "Oslobygg Rules"])
+    assert [p.name for p in found] == ["simba.ids"]
+
+
+def test_oslobygg_rules_shipped():
+    """The converted Oslobygg files load, in phase order, with the common requirements in every phase"""
+    files = sorted(Validation_IFC.OSLOBYGG_FOLDER.glob("oslobygg_*_ark.ids"))
+    phases = [Validation_IFC.ids_phase(p, {})[0] for p in files]
+    assert phases == ["Konseptvalg", "Forprosjekt", "Detaljering", "Som bygget"]
+    for path in files:
+        _, concepts, _ = Validation_IFC.load_ids(path)
+        labels = {c.label for c in concepts}
+        assert {"Forvaltnings-ID", "Bygg-ID", "Romnummer", "Pset_WallCommon.IsExternal"} <= labels

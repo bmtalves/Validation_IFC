@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SIMBA Validation Report</title>
+<title>BIM Validation Report</title>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -244,7 +244,7 @@
 <main>
   <header>
     <div>
-      <h1>SIMBA 2.1 validation</h1>
+      <h1 id="title">SIMBA 2.1 validation</h1>
       <p class="sub" id="phase"></p>
     </div>
     <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
@@ -261,7 +261,7 @@
   <div class="grid-charts">
     <div class="card">
       <h2>By object group</h2>
-      <p class="sub">Share of checks passed per Statsbygg group, worst first</p>
+      <p class="sub">Share of checks passed per object group, worst first</p>
       <div class="legend"><span><i style="background:var(--good)"></i>Passed</span><span><i style="background:var(--critical)"></i>Failed</span><span><i style="background:var(--warning)"></i>Missing</span></div>
       <div class="bars" id="by-group"></div>
     </div>
@@ -396,14 +396,14 @@ function el(tag, attrs = {}, ...children) {
 // ---------- Theme ----------
 (function () {
   let stored = null;
-  try { stored = localStorage.getItem("simba-theme"); } catch (e) {}
+  try { stored = localStorage.getItem("validation-theme"); } catch (e) {}
   if (stored) document.documentElement.dataset.theme = stored;
   $("theme").addEventListener("click", () => {
     const current = document.documentElement.dataset.theme
       || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
     const next = current === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = next;
-    try { localStorage.setItem("simba-theme", next); } catch (e) {}
+    try { localStorage.setItem("validation-theme", next); } catch (e) {}
   });
 })();
 
@@ -502,11 +502,13 @@ function rowToModel(row, obj) {
 
 // ---------- Header ----------
 $("phase").textContent = DATA.phase;
+// Reports made before Oslobygg was added have no title or client
+if (DATA.title) { $("title").textContent = DATA.title; document.title = `${DATA.title} – ${DATA.model}`; }
 const meta = $("meta");
 meta.append(el("span", {}, "Model ", el("b", { text: DATA.model })));
 const schemaBadge = el("span", { class: "badge" },
-  el("span", { class: "dot", style: `background:${DATA.schema === "IFC4" ? "var(--good)" : "var(--warning)"}` }),
-  DATA.schema === "IFC4" ? "IFC4" : `${DATA.schema} — Statsbygg requires IFC4`);
+  el("span", { class: "dot", style: `background:${DATA.schema === "IFC4" || DATA.client === "oslobygg" ? "var(--good)" : "var(--warning)"}` }),
+  DATA.schema === "IFC4" || DATA.client === "oslobygg" ? DATA.schema : `${DATA.schema} — Statsbygg requires IFC4`);
 meta.append(schemaBadge);
 meta.append(el("span", { text: DATA.generated }));
 
