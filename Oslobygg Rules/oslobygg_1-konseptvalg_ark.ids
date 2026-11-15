@@ -1,0 +1,323 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ids:ids xmlns:ids="http://standards.buildingsmart.org/IDS" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <ids:info>
+    <ids:title>Oslobygg BIM egenskapsmatrise – ARK – Konseptvalg</ids:title>
+    <ids:description>Laget fra BIM egenskapsmatrise.xlsx med make_oslobygg_ids.py. Ikke en offisiell Oslobygg-fil.</ids:description>
+    <ids:purpose>ARK</ids:purpose>
+    <ids:milestone>Konseptvalg</ids:milestone>
+  </ids:info>
+  <ids:specifications>
+    <ids:specification name="Prosjekt" ifcVersion="IFC4" minOccurs="0" maxOccurs="unbounded">
+      <ids:applicability>
+        <ids:entity>
+          <ids:name>
+            <ids:simpleValue>IFCPROJECT</ids:simpleValue>
+          </ids:name>
+        </ids:entity>
+      </ids:applicability>
+      <ids:requirements>
+        <ids:attribute instructions=": Forvaltnings-ID || Oslobyggs forvaltnings-ID: 6 siffer, f.eks. 200635 (BIM-manual, begreper)">
+          <ids:name>
+            <ids:simpleValue>Name</ids:simpleValue>
+          </ids:name>
+          <ids:value>
+            <xs:restriction base="xs:string">
+              <xs:pattern value="\d{6}" />
+            </xs:restriction>
+          </ids:value>
+        </ids:attribute>
+      </ids:requirements>
+    </ids:specification>
+    <ids:specification name="Tomt" ifcVersion="IFC4" minOccurs="0" maxOccurs="unbounded">
+      <ids:applicability>
+        <ids:entity>
+          <ids:name>
+            <ids:simpleValue>IFCSITE</ids:simpleValue>
+          </ids:name>
+        </ids:entity>
+      </ids:applicability>
+      <ids:requirements>
+        <ids:attribute instructions=": Tomtenavn || Navn på tomt (gatenavn)">
+          <ids:name>
+            <ids:simpleValue>Name</ids:simpleValue>
+          </ids:name>
+        </ids:attribute>
+      </ids:requirements>
+    </ids:specification>
+    <ids:specification name="Bygning" ifcVersion="IFC4" minOccurs="0" maxOccurs="unbounded">
+      <ids:applicability>
+        <ids:entity>
+          <ids:name>
+            <ids:simpleValue>IFCBUILDING</ids:simpleValue>
+          </ids:name>
+        </ids:entity>
+      </ids:applicability>
+      <ids:requirements>
+        <ids:attribute instructions=": Bygg-ID || Oslobyggs bygg-ID: 2 siffer, 01-99 (BIM-manual, begreper)">
+          <ids:name>
+            <ids:simpleValue>Name</ids:simpleValue>
+          </ids:name>
+          <ids:value>
+            <xs:restriction base="xs:string">
+              <xs:pattern value="0[1-9]|[1-9]\d" />
+            </xs:restriction>
+          </ids:value>
+        </ids:attribute>
+      </ids:requirements>
+    </ids:specification>
+    <ids:specification name="Etasje" ifcVersion="IFC4" minOccurs="0" maxOccurs="unbounded">
+      <ids:applicability>
+        <ids:entity>
+          <ids:name>
+            <ids:simpleValue>IFCBUILDINGSTOREY</ids:simpleValue>
+          </ids:name>
+        </ids:entity>
+      </ids:applicability>
+      <ids:requirements>
+        <ids:attribute instructions=": Etasjenavn || Navn på etasje">
+          <ids:name>
+            <ids:simpleValue>Name</ids:simpleValue>
+          </ids:name>
+        </ids:attribute>
+      </ids:requirements>
+    </ids:specification>
+    <ids:specification name="Rom" ifcVersion="IFC4" minOccurs="0" maxOccurs="unbounded">
+      <ids:applicability>
+        <ids:entity>
+          <ids:name>
+            <ids:simpleValue>IFCSPACE</ids:simpleValue>
+          </ids:name>
+        </ids:entity>
+      </ids:applicability>
+      <ids:requirements>
+        <ids:attribute instructions=": Romnummer || Romnummer med ni tegn: bygg-ID, bindestrek, etasje (K, U, E, M, L eller T + to siffer) og tre siffer, f.eks. 01-E01001 (BIM-manual 5.4.1)">
+          <ids:name>
+            <ids:simpleValue>Name</ids:simpleValue>
+          </ids:name>
+          <ids:value>
+            <xs:restriction base="xs:string">
+              <xs:pattern value="\d{2}-[KUEMLT]\d{2}\d{3}" />
+            </xs:restriction>
+          </ids:value>
+        </ids:attribute>
+        <ids:attribute instructions=": Romnavn || Romnavn (BIM-manual 5.4.1)">
+          <ids:name>
+            <ids:simpleValue>LongName</ids:simpleValue>
+          </ids:name>
+        </ids:attribute>
+        <ids:property instructions="Eksempel: Korridor" minOccurs="1" maxOccurs="unbounded">
+          <ids:propertySet>
+            <ids:simpleValue>Pset_SpaceCommon</ids:simpleValue>
+          </ids:propertySet>
+          <ids:name>
+            <ids:simpleValue>Category</ids:simpleValue>
+          </ids:name>
+        </ids:property>
+        <ids:property instructions="True/False" datatype="IFCBOOLEAN" minOccurs="1" maxOccurs="unbounded">
+          <ids:propertySet>
+            <ids:simpleValue>Pset_SpaceCommon</ids:simpleValue>
+          </ids:propertySet>
+          <ids:name>
+            <ids:simpleValue>FireExit</ids:simpleValue>
+          </ids:name>
+        </ids:property>
+      </ids:requirements>
+    </ids:specification>
+    <ids:specification name="22 Bjelker" ifcVersion="IFC4" minOccurs="0" maxOccurs="unbounded">
+      <ids:applicability>
+        <ids:entity>
+          <ids:name>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="IFCBEAM" />
+              <xs:enumeration value="IFCBEAMSTANDARDCASE" />
+            </xs:restriction>
+          </ids:name>
+        </ids:entity>
+      </ids:applicability>
+      <ids:requirements>
+        <ids:property instructions="True/False" datatype="IFCBOOLEAN" minOccurs="1" maxOccurs="unbounded">
+          <ids:propertySet>
+            <ids:simpleValue>Pset_BeamCommon</ids:simpleValue>
+          </ids:propertySet>
+          <ids:name>
+            <ids:simpleValue>LoadBearing</ids:simpleValue>
+          </ids:name>
+        </ids:property>
+        <ids:property instructions="True/False" datatype="IFCBOOLEAN" minOccurs="1" maxOccurs="unbounded">
+          <ids:propertySet>
+            <ids:simpleValue>Pset_BeamCommon</ids:simpleValue>
+          </ids:propertySet>
+          <ids:name>
+            <ids:simpleValue>IsExternal</ids:simpleValue>
+          </ids:name>
+        </ids:property>
+      </ids:requirements>
+    </ids:specification>
+    <ids:specification name="22 Søyler" ifcVersion="IFC4" minOccurs="0" maxOccurs="unbounded">
+      <ids:applicability>
+        <ids:entity>
+          <ids:name>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="IFCCOLUMN" />
+              <xs:enumeration value="IFCCOLUMNSTANDARDCASE" />
+            </xs:restriction>
+          </ids:name>
+        </ids:entity>
+      </ids:applicability>
+      <ids:requirements>
+        <ids:property instructions="True/False" datatype="IFCBOOLEAN" minOccurs="1" maxOccurs="unbounded">
+          <ids:propertySet>
+            <ids:simpleValue>Pset_ColumnCommon</ids:simpleValue>
+          </ids:propertySet>
+          <ids:name>
+            <ids:simpleValue>LoadBearing</ids:simpleValue>
+          </ids:name>
+        </ids:property>
+        <ids:property instructions="True/False" datatype="IFCBOOLEAN" minOccurs="1" maxOccurs="unbounded">
+          <ids:propertySet>
+            <ids:simpleValue>Pset_ColumnCommon</ids:simpleValue>
+          </ids:propertySet>
+          <ids:name>
+            <ids:simpleValue>IsExternal</ids:simpleValue>
+          </ids:name>
+        </ids:property>
+      </ids:requirements>
+    </ids:specification>
+    <ids:specification name="25 Dekker og gulv" ifcVersion="IFC4" minOccurs="0" maxOccurs="unbounded">
+      <ids:applicability>
+        <ids:entity>
+          <ids:name>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="IFCSLAB" />
+              <xs:enumeration value="IFCSLABSTANDARDCASE" />
+              <xs:enumeration value="IFCSLABELEMENTEDCASE" />
+            </xs:restriction>
+          </ids:name>
+        </ids:entity>
+      </ids:applicability>
+      <ids:requirements>
+        <ids:property instructions="True/False" datatype="IFCBOOLEAN" minOccurs="1" maxOccurs="unbounded">
+          <ids:propertySet>
+            <ids:simpleValue>Pset_SlabCommon</ids:simpleValue>
+          </ids:propertySet>
+          <ids:name>
+            <ids:simpleValue>LoadBearing</ids:simpleValue>
+          </ids:name>
+        </ids:property>
+        <ids:property instructions="True/False" datatype="IFCBOOLEAN" minOccurs="1" maxOccurs="unbounded">
+          <ids:propertySet>
+            <ids:simpleValue>Pset_SlabCommon</ids:simpleValue>
+          </ids:propertySet>
+          <ids:name>
+            <ids:simpleValue>IsExternal</ids:simpleValue>
+          </ids:name>
+        </ids:property>
+      </ids:requirements>
+    </ids:specification>
+    <ids:specification name="26 Yttertak" ifcVersion="IFC4" minOccurs="0" maxOccurs="unbounded">
+      <ids:applicability>
+        <ids:entity>
+          <ids:name>
+            <ids:simpleValue>IFCROOF</ids:simpleValue>
+          </ids:name>
+        </ids:entity>
+      </ids:applicability>
+      <ids:requirements>
+        <ids:property instructions="True/False" datatype="IFCBOOLEAN" minOccurs="1" maxOccurs="unbounded">
+          <ids:propertySet>
+            <ids:simpleValue>Pset_RoofCommon</ids:simpleValue>
+          </ids:propertySet>
+          <ids:name>
+            <ids:simpleValue>IsExternal</ids:simpleValue>
+          </ids:name>
+        </ids:property>
+      </ids:requirements>
+    </ids:specification>
+    <ids:specification name="28 Trapper" ifcVersion="IFC4" minOccurs="0" maxOccurs="unbounded">
+      <ids:applicability>
+        <ids:entity>
+          <ids:name>
+            <ids:simpleValue>IFCSTAIR</ids:simpleValue>
+          </ids:name>
+        </ids:entity>
+      </ids:applicability>
+      <ids:requirements>
+        <ids:property instructions="True/False" datatype="IFCBOOLEAN" minOccurs="1" maxOccurs="unbounded">
+          <ids:propertySet>
+            <ids:simpleValue>Pset_StairCommon</ids:simpleValue>
+          </ids:propertySet>
+          <ids:name>
+            <ids:simpleValue>IsExternal</ids:simpleValue>
+          </ids:name>
+        </ids:property>
+      </ids:requirements>
+    </ids:specification>
+    <ids:specification name="Vegger (alle)" ifcVersion="IFC4" minOccurs="0" maxOccurs="unbounded">
+      <ids:applicability>
+        <ids:entity>
+          <ids:name>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="IFCWALL" />
+              <xs:enumeration value="IFCWALLSTANDARDCASE" />
+              <xs:enumeration value="IFCWALLELEMENTEDCASE" />
+            </xs:restriction>
+          </ids:name>
+        </ids:entity>
+      </ids:applicability>
+      <ids:requirements>
+        <ids:property instructions="True/False. Skiller utvendige og innvendige objekter, som har ulike krav." datatype="IFCBOOLEAN" minOccurs="1" maxOccurs="unbounded">
+          <ids:propertySet>
+            <ids:simpleValue>Pset_WallCommon</ids:simpleValue>
+          </ids:propertySet>
+          <ids:name>
+            <ids:simpleValue>IsExternal</ids:simpleValue>
+          </ids:name>
+        </ids:property>
+      </ids:requirements>
+    </ids:specification>
+    <ids:specification name="Dører (alle)" ifcVersion="IFC4" minOccurs="0" maxOccurs="unbounded">
+      <ids:applicability>
+        <ids:entity>
+          <ids:name>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="IFCDOOR" />
+              <xs:enumeration value="IFCDOORSTANDARDCASE" />
+            </xs:restriction>
+          </ids:name>
+        </ids:entity>
+      </ids:applicability>
+      <ids:requirements>
+        <ids:property instructions="True/False. Skiller utvendige og innvendige objekter, som har ulike krav." datatype="IFCBOOLEAN" minOccurs="1" maxOccurs="unbounded">
+          <ids:propertySet>
+            <ids:simpleValue>Pset_DoorCommon</ids:simpleValue>
+          </ids:propertySet>
+          <ids:name>
+            <ids:simpleValue>IsExternal</ids:simpleValue>
+          </ids:name>
+        </ids:property>
+      </ids:requirements>
+    </ids:specification>
+    <ids:specification name="Vinduer (alle)" ifcVersion="IFC4" minOccurs="0" maxOccurs="unbounded">
+      <ids:applicability>
+        <ids:entity>
+          <ids:name>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="IFCWINDOW" />
+              <xs:enumeration value="IFCWINDOWSTANDARDCASE" />
+            </xs:restriction>
+          </ids:name>
+        </ids:entity>
+      </ids:applicability>
+      <ids:requirements>
+        <ids:property instructions="True/False. Skiller utvendige og innvendige objekter, som har ulike krav." datatype="IFCBOOLEAN" minOccurs="1" maxOccurs="unbounded">
+          <ids:propertySet>
+            <ids:simpleValue>Pset_WindowCommon</ids:simpleValue>
+          </ids:propertySet>
+          <ids:name>
+            <ids:simpleValue>IsExternal</ids:simpleValue>
+          </ids:name>
+        </ids:property>
+      </ids:requirements>
+    </ids:specification>
+  </ids:specifications>
+</ids:ids>
