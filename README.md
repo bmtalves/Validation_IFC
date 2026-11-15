@@ -1,8 +1,13 @@
 # SIMBA 2.1 Validation Tool
 
-Checks an IFC model against Statsbygg's SIMBA 2.1 requirements for architects (ARK) and reports what is missing or wrong.
+Checks an IFC model against Statsbygg's SIMBA 2.1 requirements and reports what is missing or wrong.
 
-The requirements are read from Statsbygg's mvdXML files in the `Simba Rules` folder. The tool has no property names written into it, so a new release of the mvdXML files can be dropped in without changing the code.
+The requirements are read from Statsbygg's own rule files in the `Simba Rules` folder, in either of two formats:
+
+- **mvdXML** (architects, ARK): splits each phase into the steps .1, .5 and .9, and includes the PredefinedType and georeferencing checks.
+- **IDS** (all 11 disciplines): the format Statsbygg now uses in its own checking platform (AnkerDB). Each file covers a whole phase at the .9 level.
+
+The tool has no property names written into it, so a new release of the rule files can be dropped in without changing the code.
 
 ## What it does
 
@@ -34,7 +39,13 @@ Run from this folder:
 python Validation_Simba.py model.ifc
 ```
 
-The tool lists every phase found in the mvdXML files and asks which to check against:
+If both formats are there, the tool first asks which to use:
+
+```
+Rules format? mvdXML has the .1/.5/.9 steps, IDS covers every discipline (mvdxml/ids)
+```
+
+With mvdXML it lists every phase step found in the files:
 
 ```
 Exchange requirements:
@@ -44,10 +55,13 @@ Exchange requirements:
 Validate against (1-10):
 ```
 
-To use one specific rules file instead of all four:
+With IDS it asks for the phase (B3.1, B3.2, B4.1, B5.1) and then the discipline (acoustical, architectural, electrical, environmental material, fire safety, interiors, landscaping, mechanical, security, structural, water supply and sewage).
+
+To use one specific rules file instead:
 
 ```bash
 python Validation_Simba.py model.ifc rules.mvdxml
+python Validation_Simba.py model.ifc rules.ids
 ```
 
 ### The steps
@@ -56,14 +70,14 @@ python Validation_Simba.py model.ifc rules.mvdxml
 |---|---|---|
 | Old status values | `Copy DesignedStatus into ProcessStatus?` | Shown only if the model has `NOSSB_Process.DesignedStatus`. Objects that already have a ProcessStatus are skipped, and the old values are kept. |
 | Summary | – | One `OK` / `FAIL` line per requirement with the number of failed and missing objects. |
-| Report | `Export a report? (csv/html dashboard/both/no)` | Files are named `validation <model> <phase>.csv` / `.html`. The CSV has one row per object and requirement, with the value found and its status. |
+| Report | `Export a report? (csv/html dashboard/both/no)` | Files are named `validation <model> <phase>.csv` / `.html`, e.g. `validation house B5.1.1.csv` (mvdXML) or `validation house B5.1 architectural.csv` (IDS). The CSV has one row per object and requirement, with the value found and its status. |
 | Save | `Save as new file?` | Only shown if status values were copied. Default name is `<model>_updated.ifc`. |
 
 You can answer prompts with the first letter (`y`, `n`, `c`, `h`, `b`).
 
 ## Allowed values
 
-The Statsbygg mvdXML files only require text properties such as `ProcessStatus` or `FireRating` to be filled in. They don't say which values are allowed. You can add those lists yourself in `allowed_values.csv`:
+The Statsbygg mvdXML files only require text properties such as `ProcessStatus` or `FireRating` to be filled in. They don't say which values are allowed. The IDS files have lists for about 23 properties, mostly security, MEP and EPD status, and these are used automatically. You can add your own lists in `allowed_values.csv`; a list there replaces the one from the IDS:
 
 ```csv
 Property,Allowed values,Source
@@ -78,6 +92,22 @@ NONS_Thermal.ThermalTransmittanceReq,"re:\d+([.,]\d+)?",U-value as a number
 - **Shipped lists:** `NONS_Process.ProcessStatus` is limited to MMI codes, following SIMBA 2.1 Veiledning B.3.1. A primary code is a whole hundred (e.g. 200 Ferdig konsept, 300 Underlag for detaljering, 400 Produksjonsunderlag). A secondary code adds x25 etablert for kontroll, x50 kontrollert or x75 akseptert, e.g. `250`. The other lines are commented-out examples.
 - **Validation:** a value that isn't on the list fails the requirement, just like a missing value. This applies whether the value is on the object or on its type.
 
+## Cross-checks between properties
+
+Some values must agree with each other. `cross_checks.csv` lists properties whose value must contain the values of other properties:
+
+```csv
+Property,Must contain,Source
+NONS_Reference.RefString,NONS_Reference.RefLocStorey;NONS_Reference.RefPriSysClass;NONS_Reference.RefCompClass;NONS_Reference.RefCompOccNo,TFM reference string
+```
+
+- The shipped row checks that the TFM reference string `RefString` contains the storey, system, component class and occurrence number. It follows the check shown in Statsbygg's AnkerDB setup. SIMBA says the `RefString` format is agreed per project, so edit or remove the row to match yours.
+- It runs for every object group that requires the first property, and shows up as its own requirement, e.g. `NONS_Reference.RefString contents`.
+- Objects without the first property are left out: its own requirement already reports them as missing.
+- The check fails if one of the listed properties is missing or its value isn't in the first one. The value shown says why, e.g. `+B01=360.001-02 (RefCompOccNo 07 not in it)`.
+
+## Measure limits
+
 Measures are also checked against IFC's own limits: `IFCPOSITIVELENGTHMEASURE` must be above 0 and `IFCNORMALISEDRATIOMEASURE` between 0 and 1.
 
 ## Statuses
@@ -87,7 +117,7 @@ Every check gets one of three statuses:
 | Status | Meaning |
 |---|---|
 | **Passed** | The value is there and valid. |
-| **Failed** | There is a value, but it is wrong: the wrong value type (e.g. text instead of a boolean), not in `allowed_values.csv`, or outside IFC's limits. |
+| **Failed** | There is a value, but it is wrong: the wrong value type (e.g. text instead of a boolean), not on the allowed list, outside IFC's limits, or not matching a cross-check. |
 | **Missing** | There is no value at all: the property, attribute, type or georeferencing is not in the model. |
 
 The CSV's `Validation` column shows `PASSED`, `FAILED` or `MISSING`. The dashboard shows them in green, red and yellow, each with its own icon.
@@ -107,24 +137,25 @@ The CSV's `Validation` column shows `PASSED`, `FAILED` or `MISSING`. The dashboa
   - *Only not passing* hides everything that passes.
   - The project, site, building, storeys, spaces and openings are not drawn.
   - The model is built by several background workers at once (one per spare CPU core, fewer for very big files to save memory) and appears while it loads. Files over 100 MB use a lower detail level for curved shapes such as pipes and railings. A 300 MB model takes about 25 seconds. The dashboard itself stays small, since it holds no geometry.
-- **Requirements:** a table with the failed and missing count per requirement, which you can filter by status and group, search, and sort. A requirement shows as *Missing* when all its problems are missing values, and *Failing* when at least one value is wrong.
-- **Values:** pick a requirement (it opens on `NONS_Process.ProcessStatus`) to see every value in the model, how many objects have it, and whether it passes. Objects with no value are grouped as *Missing*, and values of the wrong type show the type, e.g. `yes (IfcLabel)`. The list can be filtered by Passing, Failing or Missing. Click a value to list only its objects. The list shows each object's status, value, class, name, GlobalId and group, and can be filtered, searched and sorted.
+- **Requirements:** a table with the failed and missing count per requirement, which you can filter by status and group, search, and sort. A requirement shows as *Missing* when all its problems are missing values, and *Failing* when at least one value is wrong. Hover or tab to the ⓘ next to a requirement to read what it means (from the rule file) and its allowed values. The same ⓘ appears on each check in the 3D side panel.
+- **Values:** pick a requirement (it opens on `NONS_Process.ProcessStatus`) to see every value in the model, how many objects have it, and whether it passes. Above the list it shows the requirement's description and, when it has a list of allowed values (from the IDS or `allowed_values.csv`), each allowed value with how many objects use it. Values nobody uses are drawn dashed, and the header counts the objects whose value isn't on the list. Objects with no value are grouped as *Missing*, and values of the wrong type show the type, e.g. `yes (IfcLabel)`. The list can be filtered by Passing, Failing or Missing. Click a value to list only its objects. The list shows each object's status, value, class, name, GlobalId and group, and can be filtered, searched and sorted.
 - **Objects:** each object's class, name, GlobalId and failing requirements. It shows the objects with the most issues first; switch to *All objects* to list every object checked. You can filter by class and search by name or GlobalId.
 
 It follows the system light/dark mode and has its own theme toggle.
 
 ## What is checked
 
-Each mvdXML file has *concept roots* (object groups such as `200 Wall`), each with *concepts* (requirements). A requirement is checked when it is marked **mandatory** for the chosen phase.
+Each mvdXML file has *concept roots* (object groups such as `200 Wall`), each with *concepts* (requirements). A requirement is checked when it is marked **mandatory** for the chosen phase. Each IDS file has *specifications* (the same object groups), each with attribute and property requirements; all of them are checked.
 
 | Rule | Example |
 |---|---|
 | Property exists with the right value type | `Pset_WallCommon.IsExternal` as `IFCBOOLEAN` |
 | Property value is allowed | values listed in `allowed_values.csv`; measures within IFC's limits |
 | Attribute is filled in | `Name`, `Description`, `LongName`, `LandTitleNumber` |
-| Predefined type is set | `PredefinedType` on the object or its type |
-| Object has a type | `IfcWallType` assigned |
-| Georeferencing | `IfcMapConversion` with an `EPSG:` CRS on the Body context |
+| Predefined type is set (mvdXML only) | `PredefinedType` on the object or its type |
+| Object has a type (mvdXML only) | `IfcWallType` assigned |
+| Georeferencing (mvdXML only) | `IfcMapConversion` with an `EPSG:` CRS on the Body context |
+| Values agree (cross-checks) | `RefString` contains `RefLocStorey` … |
 
 ### How the rules are interpreted
 
@@ -135,6 +166,17 @@ Each mvdXML file has *concept roots* (object groups such as `200 Wall`), each wi
 - **Site requirements:** the rules only apply the site checks when the model is georeferenced with `EPSG:5555`, so models without it get no site checks.
 - **Model schema:** SIMBA 2.1 requires IFC4. Other schemas are still validated, with a warning.
 
+### How the IDS files are interpreted
+
+Statsbygg's IDS files are IDS 0.9.6, exported from BIMQ. The tool reads the parts they use:
+
+- **Classes:** a specification applies to the listed classes only, not their subclasses, as IDS defines it. An IFC2X3 `IfcWallStandardCase` is therefore not checked under `200 Wall`; in IFC4 models this makes no difference. Objects can also be limited by PredefinedType, e.g. *Covering Ceiling*.
+- **Properties** are checked the same way as in the mvdXML: own value or the type's, with the right value type.
+- **Missing applicability:** 133 specifications were exported with an empty "applies to". When the same specification name has one in another IDS file (e.g. `200 Ramp` → `IfcRamp`), that one is used. The 59 that have none anywhere (mostly electrical sensors and the air handler) are skipped, and the tool names them when you pick that file.
+- **Example values:** a "list" with a single value is an example in these files (e.g. `BuildingID` = "Matrikkelens bygninngsnummer"), so it only means "must have a value". `UNSET.` is read as `UNSET`.
+
+On the architect's model, IDS B4.1 and mvdXML B4.1.9 give the same result for every check they share; mvdXML adds the PredefinedType and georeferencing checks.
+
 ## Files
 
 ```
@@ -142,16 +184,18 @@ Validation_Simba/
 ├── Validation_Simba.py           the tool
 ├── dashboard_template.html       layout of the HTML dashboard (must stay next to Validation_Simba.py)
 ├── allowed_values.csv            your lists of allowed values (optional)
+├── cross_checks.csv              properties that must contain other properties' values (optional)
 ├── test_validation_simba.py      tests
 ├── README.md
 └── Simba Rules/
     ├── statsbygg-template-simba-2-1-…_b3-1_architect-ark.mvdxml   B3.1 Skisseprosjekt
     ├── statsbygg-template-simba-2-1-…_b3-2_architect-ark.mvdxml   B3.2 Forprosjekt
     ├── statsbygg-template-simba-2-1-…_b4-1_architect-ark.mvdxml   B4.1 Detaljprosjekt
-    └── statsbygg-template-simba-2-1-…_b5-1_architect-ark.mvdxml   B5.1 Ferdigstillelse
+    ├── statsbygg-template-simba-2-1-…_b5-1_architect-ark.mvdxml   B5.1 Ferdigstillelse
+    └── SIMBA-2.1-kravsett-ALLE-FAG-IDS-096/                          44 IDS files: 4 phases × 11 disciplines
 ```
 
-Every `*.mvdxml` file in `Simba Rules` (or next to `Validation_Simba.py`) is picked up automatically.
+Every `*.mvdxml` and `*.ids` file in `Simba Rules` (or next to `Validation_Simba.py`), and in folders one level inside them, is picked up automatically.
 
 ## Tests
 
@@ -161,18 +205,20 @@ python -m pytest test_validation_simba.py
 
 The tests build small IFC4 models in memory and cover:
 
-- reading the rules
+- reading the rules (mvdXML and IDS)
 - property inheritance from types
 - wrong value types
 - PredefinedType
 - copying old status values
 - the dashboard data
 - allowed values and measure limits
+- cross-checks
 - finding the rules files
 
 ## Limitations
 
-- **Allowed values have to be added by hand:** Statsbygg's mvdXML files contain no value lists, so text properties are only checked against the lists you put in `allowed_values.csv`.
+- **Allowed values:** Statsbygg's mvdXML files contain no value lists and the IDS files only a few, so most text properties are only checked against the lists you put in `allowed_values.csv`.
+- **IDS:** no .1/.5/.9 steps and no PredefinedType or georeferencing checks (they aren't in the files), and 59 specifications without an applicability are skipped. Only the parts of IDS that Statsbygg's files use are read (entity, attribute and property facets).
 - **Old date not copied:** `NOSSB_Process.DesignedStatusDate` has no equivalent in SIMBA 2.1.
 - **3D model:** whoever opens the dashboard also needs the IFC file, and an internet connection for the viewer libraries. Large models need a computer with plenty of memory (each worker reads its own copy of the file, so a 300 MB model can use 1.5 GB or more while loading).
 - **Rule syntax:** only the mvdXML rule syntax used in the Statsbygg files is supported, not the full mvdXML standard.

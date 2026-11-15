@@ -105,7 +105,14 @@ def test_dashboard_data():
     data = dashboard_data(results, model, "folder/model.ifc", "B5.1.1 Handover")
     assert data["model"] == "model.ifc"
     assert data["requirements"] == [{"group": "200 Wall", "label": "Pset_WallCommon.IsExternal", "index": 0,
-                                     "pset": "Pset_WallCommon", "type": "IFCBOOLEAN", "passed": 1, "failed": 0, "missing": 1}]
+                                     "pset": "Pset_WallCommon", "type": "IFCBOOLEAN", "info": "", "allowed": [],
+                                     "passed": 1, "failed": 0, "missing": 1}]
+    # Allowed values and descriptions go to the dashboard too
+    concept.description = "Is the wall external"
+    import re
+    data = dashboard_data(results, model, "model.ifc", "B5.1.1", {("Pset_WallCommon", "IsExternal"): ["TRUE", re.compile("T.*")]})
+    assert data["requirements"][0]["info"] == "Is the wall external"
+    assert data["requirements"][0]["allowed"] == ["TRUE", "re:T.*"]
     assert {o["step"] for o in data["objects"]} == {typed_wall.id(), lone_wall.id()}
     failed = {o["name"]: o["failed"] for o in data["objects"]}
     assert failed == {"AVA.001": [], "AVA.002": ["Pset_WallCommon.IsExternal"]}
@@ -199,7 +206,111 @@ def test_find_rule_files(tmp_path):
 def test_get_arguments():
     assert get_arguments(["project.py", "model.ifc"]) == ("model.ifc", None)
     assert get_arguments(["project.py", "MODEL.IFC", "rules.mvdxml"])[1].name == "rules.mvdxml"
+    assert get_arguments(["project.py", "model.ifc", "b5-1.ids"])[1].name == "b5-1.ids"
     for argv in (["project.py"], ["project.py", "model.txt"], ["project.py", "model.ifc", "rules.xml"], ["project.py", "a.ifc", "b", "c"]):
         with pytest.raises(SystemExit):
             get_arguments(argv)
 
+
+
+IDS_FILE = """<?xml version="1.0" encoding="UTF-8"?>
+<ids:ids xmlns:ids="http://standards.buildingsmart.org/IDS" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <ids:info><ids:title>Test</ids:title><ids:milestone>Handover (B5.1 Ferdigstillelse)</ids:milestone></ids:info>
+  <ids:specifications>
+    <ids:specification name="200 Wall" ifcVersion="IFC4">
+      <ids:applicability><ids:entity><ids:name><ids:simpleValue>IFCWALL</ids:simpleValue></ids:name></ids:entity></ids:applicability>
+      <ids:requirements>
+        <ids:attribute instructions="0001-003 : Name || Component code"><ids:name><ids:simpleValue>Name</ids:simpleValue></ids:name></ids:attribute>
+        <ids:property datatype="IFCBOOLEAN" minOccurs="1" maxOccurs="unbounded">
+          <ids:propertySet><ids:simpleValue>Pset_WallCommon</ids:simpleValue></ids:propertySet>
+          <ids:name><ids:simpleValue>IsExternal</ids:simpleValue></ids:name>
+        </ids:property>
+        <ids:property datatype="IFCLABEL" minOccurs="1" maxOccurs="unbounded">
+          <ids:propertySet><ids:simpleValue>NOSSB_Security</ids:simpleValue></ids:propertySet>
+          <ids:name><ids:simpleValue>Class</ids:simpleValue></ids:name>
+          <ids:value><xs:restriction base="xs:string"><xs:enumeration value="LOW"/><xs:enumeration value="UNSET."/></xs:restriction></ids:value>
+        </ids:property>
+        <ids:property datatype="IFCIDENTIFIER" minOccurs="1" maxOccurs="unbounded">
+          <ids:propertySet><ids:simpleValue>Pset_BuildingCommon</ids:simpleValue></ids:propertySet>
+          <ids:name><ids:simpleValue>BuildingID</ids:simpleValue></ids:name>
+          <ids:value><xs:restriction base="xs:string"><xs:enumeration value="Matrikkelens bygningsnummer"/></xs:restriction></ids:value>
+        </ids:property>
+      </ids:requirements>
+    </ids:specification>
+    <ids:specification name="200 Ramp" ifcVersion="IFC4">
+      <ids:applicability />
+      <ids:requirements><ids:attribute><ids:name><ids:simpleValue>Name</ids:simpleValue></ids:name></ids:attribute></ids:requirements>
+    </ids:specification>
+    <ids:specification name="430 Thermostat" ifcVersion="IFC4">
+      <ids:applicability />
+      <ids:requirements><ids:attribute><ids:name><ids:simpleValue>Name</ids:simpleValue></ids:name></ids:attribute></ids:requirements>
+    </ids:specification>
+    <ids:specification name="200 Covering Ceiling" ifcVersion="IFC4">
+      <ids:applicability><ids:entity>
+        <ids:name><ids:value><xs:restriction base="xs:string"><xs:pattern value="IFCCOVERING|IFCSLAB"/></xs:restriction></ids:value></ids:name>
+        <ids:predefinedType><ids:simpleValue>CEILING</ids:simpleValue></ids:predefinedType>
+      </ids:entity></ids:applicability>
+      <ids:requirements><ids:attribute><ids:name><ids:simpleValue>Description</ids:simpleValue></ids:name></ids:attribute></ids:requirements>
+    </ids:specification>
+  </ids:specifications>
+</ids:ids>"""
+
+
+def test_load_ids(tmp_path, capsys):
+    path = tmp_path / "x_ifc-4-add2_b5-1-architectural.ids"
+    path.write_text(IDS_FILE, encoding="utf-8")
+    info, concepts, allowed = Validation_Simba.load_ids(path, {"200 Ramp": (("IFCRAMP",), None)})
+    assert "430 Thermostat" in capsys.readouterr().out  # no applicability anywhere: skipped, with a note
+    assert [(c.group, c.label) for c in concepts] == [
+        ("200 Wall", "Name"), ("200 Wall", "Pset_WallCommon.IsExternal"), ("200 Wall", "NOSSB_Security.Class"),
+        ("200 Wall", "Pset_BuildingCommon.BuildingID"), ("200 Ramp", "Name"), ("200 Covering Ceiling", "Description")]
+    assert concepts[1].required == ("property", "Pset_WallCommon", "IsExternal", "IFCBOOLEAN")
+    assert concepts[0].description == "Component code"
+    assert concepts[4].entities == ("IFCRAMP",)
+    assert concepts[5].entities == ("IFCCOVERING", "IFCSLAB") and concepts[5].predefined == "CEILING"
+    # "UNSET." is cleaned up; a one-value list is an example, not a rule
+    assert allowed == {("NOSSB_Security", "Class"): ["LOW", "UNSET"]}
+    assert Validation_Simba.ids_phase(path, info) == ("B5.1", "architectural")
+
+
+def test_ids_rules_checked(tmp_path):
+    path = tmp_path / "rules.ids"
+    path.write_text(IDS_FILE, encoding="utf-8")
+    _, concepts, allowed = Validation_Simba.load_ids(path)
+    model, typed_wall, lone_wall = make_model()
+    standard_case = ifcopenshell.api.run("root.create_entity", model, ifc_class="IfcWallStandardCase", name="AVA.003")
+    write_property(model, typed_wall, "NOSSB_Security", "Class", "IFCLABEL", "LOW")
+    write_property(model, lone_wall, "NOSSB_Security", "Class", "IFCLABEL", "HIGH")
+    results = validate(model, concepts, allowed)
+    by_check = {(r.element.Name, r.concept.label): r.status for r in results}
+    # IDS entities don't include subclasses
+    assert not any(name == "AVA.003" for name, _ in by_check)
+    # IsExternal comes from AVA.001's type
+    assert by_check[("AVA.001", "Pset_WallCommon.IsExternal")] == "passed"
+    assert by_check[("AVA.002", "Pset_WallCommon.IsExternal")] == "missing"
+    assert by_check[("AVA.001", "NOSSB_Security.Class")] == "passed"
+    assert by_check[("AVA.002", "NOSSB_Security.Class")] == "failed"
+
+
+def test_cross_check(tmp_path):
+    csv_file = tmp_path / "cross_checks.csv"
+    csv_file.write_text("Property,Must contain\n# comment,\n"
+                        "NONS_Reference.RefString,NONS_Reference.RefLocStorey;NONS_Reference.RefCompOccNo\n", encoding="utf-8")
+    checks = Validation_Simba.load_cross_checks(csv_file)
+    assert checks == {("NONS_Reference", "RefString"): (("NONS_Reference", "RefLocStorey"), ("NONS_Reference", "RefCompOccNo"))}
+
+    rule = ("rule", parse_parameters("Set[Value]='NONS_Reference' AND PropertyName[Value]='RefString' AND Value[Exists]=TRUE"))
+    base = Concept("200 Wall", "IfcWall", "NONS_Reference.RefString", rule, None, ("property", "NONS_Reference", "RefString", "IFCLABEL"))
+    extra = Validation_Simba.cross_check_concepts([base, base], checks)
+    assert len(extra) == 1 and extra[0].label == "NONS_Reference.RefString contents"
+
+    model, typed_wall, lone_wall = make_model()
+    third = ifcopenshell.api.run("root.create_entity", model, ifc_class="IfcWall", name="AVA.003")
+    for wall, ref, storey, number in ((typed_wall, "+B01=360.001-01", "B01", "01"), (lone_wall, "+B01=360.001-02", "B01", "07")):
+        write_property(model, wall, "NONS_Reference", "RefString", "IFCLABEL", ref)
+        write_property(model, wall, "NONS_Reference", "RefLocStorey", "IFCLABEL", storey)
+        write_property(model, wall, "NONS_Reference", "RefCompOccNo", "IFCLABEL", number)
+    results = {r.element.Name: r for r in validate(model, extra)}
+    assert results["AVA.001"].status == "passed"
+    assert results["AVA.002"].status == "failed" and "RefCompOccNo 07 not in it" in results["AVA.002"].value
+    assert "AVA.003" not in results  # no RefString: its own requirement reports that

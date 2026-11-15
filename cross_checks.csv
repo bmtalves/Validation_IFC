@@ -1,0 +1,5 @@
+Property,Must contain,Source
+# One row per property whose value must contain the values of other properties (pset.property; separated by ;).
+# The check runs on objects that have the first property. It fails when a listed property is missing or its value is not in it.
+# SIMBA says the RefString format is agreed per project; this row follows the check Statsbygg's AnkerDB setup shows. Remove or edit it to match your project.
+NONS_Reference.RefString,NONS_Reference.RefLocStorey;NONS_Reference.RefPriSysClass;NONS_Reference.RefCompClass;NONS_Reference.RefCompOccNo,"TFM reference string (AnkerDB example, SIMBA NONS10102)"

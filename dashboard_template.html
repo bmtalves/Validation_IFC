@@ -131,6 +131,25 @@
   .bar-row.pickable { cursor: pointer; }
   .bar-row.selected { background: var(--accent-wash); box-shadow: inset 3px 0 0 var(--accent); }
   .values-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; margin: 20px 0 10px; }
+  .info-icon {
+    display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 6px; vertical-align: 1px;
+    border: 1px solid var(--axis); border-radius: 50%; color: var(--text-muted); font-size: 10px; font-weight: 600;
+    font-style: normal; cursor: help;
+  }
+  .info-icon:hover, .info-icon:focus-visible { color: var(--accent); border-color: var(--accent); outline: none; }
+  .req-info { margin: 0 0 14px; max-width: 900px; }
+  .req-info p { margin: 0 0 8px; }
+  .allowed-head { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+  .allowed-head b { color: var(--text-primary); font-weight: 600; }
+  .allowed-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .allowed-chip {
+    font-size: 12px; border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px;
+    color: var(--text-primary); white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  .allowed-chip b { font-weight: 600; color: var(--text-secondary); margin-left: 6px; }
+  .allowed-chip.unused { color: var(--text-muted); border-style: dashed; }
+  .allowed-chip.unused b { color: var(--text-muted); font-weight: 400; }
+  .not-allowed { color: var(--critical); }
   .chip {
     display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary);
     border: 1px solid var(--border); border-radius: 999px; padding: 2px 4px 2px 10px;
@@ -317,6 +336,7 @@
         <select id="v-req" aria-label="Requirement"></select>
       </div>
     </div>
+    <div class="req-info" id="v-info"></div>
     <div class="legend"><span><i style="background:var(--good)"></i>Passed</span><span><i style="background:var(--critical)"></i>Failed</span><span><i style="background:var(--warning)"></i>Missing</span></div>
     <div class="bars" id="v-dist"></div>
     <div class="values-head">
@@ -426,6 +446,41 @@ function statusCell(status) {
     el("span", { class: "icon", style: `background:${s.color};color:${s.ink}`, "aria-hidden": "true", text: s.icon }),
     s.label);
 }
+// What a requirement means, and its allowed values, by label (the same for every group)
+function infoOf(label) { return (reqs.find((r) => r.label === label && r.info) || {}).info || ""; }
+function allowedOf(label) { return (reqs.find((r) => r.label === label && r.allowed && r.allowed.length) || {}).allowed || []; }
+// "re:" entries are patterns the whole value must match, as in allowed_values.csv
+const patternCache = new Map();
+function matchesAllowed(entry, value) {
+  if (!entry.startsWith("re:")) return entry === value;
+  if (!patternCache.has(entry)) {
+    let pattern = null;
+    try { pattern = new RegExp(`^(?:${entry.slice(3)})$`); } catch (e) {}
+    patternCache.set(entry, pattern);
+  }
+  const pattern = patternCache.get(entry);
+  return !!pattern && pattern.test(value);
+}
+const isAllowed = (list, value) => list.some((entry) => matchesAllowed(entry, value));
+function infoTip(label) {
+  const info = infoOf(label), list = allowedOf(label);
+  if (!info && !list.length) return "";
+  const shown = list.slice(0, 12).map((v) => esc(v.startsWith("re:") ? `pattern ${v.slice(3)}` : v)).join(", ");
+  return `<b>${esc(label)}</b>` + (info ? `<br>${esc(info)}` : "") +
+    (list.length ? `<br><br>Allowed: ${shown}${list.length > 12 ? ` and ${list.length - 12} more` : ""}` : "");
+}
+// A small ⓘ that shows the requirement's description and allowed values
+function infoIcon(label) {
+  const tip = infoTip(label);
+  if (!tip) return null;
+  const icon = el("i", { class: "info-icon", tabindex: "0", role: "img", "aria-label": `About ${label}: ${infoOf(label)}`, text: "i" });
+  icon.addEventListener("mousemove", (e) => showTip(e, tip));
+  icon.addEventListener("mouseleave", hideTip);
+  icon.addEventListener("focus", () => { const r = icon.getBoundingClientRect(); showTip({ clientX: r.right, clientY: r.bottom }, tip); });
+  icon.addEventListener("blur", hideTip);
+  return icon;
+}
+
 const totals = reqs.reduce((a, r) => ({ passed: a.passed + r.passed, failed: a.failed + r.failed, missing: a.missing + r.missing }),
   { passed: 0, failed: 0, missing: 0 });
 const checks = totalOf(totals);
@@ -623,7 +678,7 @@ function renderRequirements() {
     body.append(el("tr", {},
       el("td", {}, statusCell(countStatus(r))),
       el("td", { text: r.group }),
-      el("td", {}, r.label),
+      el("td", {}, r.label, infoIcon(r.label)),
       el("td", { class: "mono", text: r.type || "—" }),
       el("td", { class: "num", text: fmt(r.failed) }),
       el("td", { class: "num", text: fmt(r.missing) }),
@@ -704,8 +759,11 @@ function renderValueDistribution() {
       el("div", { class: "name" + (row.value === null ? " missing" : ""), text: shown }),
       el("div", { class: "track", style: `width:${(total / max) * 100}%` }, ...segments(row)),
       el("div", { class: "num", text: fmt(total) }));
+    const list = allowedOf($("v-req").value);
+    const offList = row.value !== null && list.length && !isAllowed(list, row.value);
     const tip = `<b>${esc(shown)}</b><br>${fmt(total)} objects<br>` +
-      (row.value === null ? "No value" : `${fmt(row.passed)} passed · ${fmt(row.failed)} failed`) + "<br>Click to list them";
+      (row.value === null ? "No value" : `${fmt(row.passed)} passed · ${fmt(row.failed)} failed`) +
+      (offList ? "<br>Not on the list of allowed values" : "") + "<br>Click to list them";
     node.addEventListener("click", () => pickValue(row.value));
     node.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickValue(row.value); } });
     node.addEventListener("mousemove", (e) => showTip(e, tip));
@@ -760,15 +818,43 @@ function renderValueTable() {
     ? `Showing ${VALUE_LIMIT} of ${fmt(rows.length)} objects — use the filters or the CSV report for the rest`
     : `Showing ${fmt(rows.length)} objects`;
 }
+function renderValueInfo() {
+  const label = $("v-req").value, box = $("v-info");
+  box.replaceChildren();
+  const info = infoOf(label), list = allowedOf(label);
+  if (info) box.append(el("p", { class: "sub", text: info }));
+  if (!list.length) {
+    box.append(el("div", { class: "allowed-head", text: "No list of allowed values: any value of the right type passes." }));
+    return;
+  }
+  // How many objects use each allowed value, and how many have a value that isn't on the list
+  const counts = new Map(list.map((entry) => [entry, 0]));
+  let outside = 0;
+  for (const row of valueRows()) {
+    if (row.value === null) continue;
+    const entry = list.find((e) => matchesAllowed(e, row.value));
+    if (entry) counts.set(entry, counts.get(entry) + 1); else outside++;
+  }
+  box.append(el("div", { class: "allowed-head" }, el("b", { text: `Allowed values (${list.length})` }),
+    outside ? el("span", { class: "not-allowed", text: ` · ${fmt(outside)} objects have a value that isn't on the list` }) : null));
+  box.append(el("div", { class: "allowed-chips" }, ...list.map((entry) => {
+    const n = counts.get(entry), text = entry.startsWith("re:") ? `pattern ${entry.slice(3)}` : entry;
+    return el("span", { class: "allowed-chip" + (n ? "" : " unused"), title: n ? `${n} objects` : "Not used in the model" },
+      text, el("b", { text: fmt(n) }));
+  })));
+}
+
 $("v-req").addEventListener("change", () => {
   valueFilter = undefined;
   if (window.simbaModel) window.simbaModel.follow($("v-req").value, undefined);
   distributionExpanded = false;
+  renderValueInfo();
   renderValueDistribution();
   renderValueTable();
 });
 $("v-status").addEventListener("change", renderValueTable);
 $("v-search").addEventListener("input", renderValueTable);
+renderValueInfo();
 renderValueDistribution();
 renderValueTable();
 
@@ -1313,7 +1399,7 @@ function createViewer(THREE, OrbitControls) {
       const s = STATUS[CODE[row.status]];
       list.append(el("div", { class: "panel-check" + (label === colourBy ? " current" : "") },
         el("span", { class: "status" }, el("span", { class: "icon", title: s.label, style: `background:${s.color};color:${s.ink}`, text: s.icon })),
-        el("div", {}, el("div", { text: label }),
+        el("div", {}, el("div", {}, label, infoIcon(label)),
           row.value === null ? el("div", { class: "missing", text: "Missing" }) : el("div", { class: "mono", text: row.value }))));
     }
     panel.append(list);

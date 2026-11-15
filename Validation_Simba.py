@@ -13,11 +13,16 @@ import ifcopenshell.api.pset
 
 
 MVD = "{http://buildingsmart-tech.org/mvd/XML/1.1}"
+IDS = "{http://standards.buildingsmart.org/IDS}"
+XS = "{http://www.w3.org/2001/XMLSchema}"
 TOOL_FOLDER = Path(__file__).resolve().parent
-# Rules files are read from "Simba Rules" and from the tool's own folder
+# Rules files are read from "Simba Rules" and from the tool's own folder, and from folders inside them
 RULES_FOLDERS = [TOOL_FOLDER / "Simba Rules", TOOL_FOLDER]
 DASHBOARD_TEMPLATE = TOOL_FOLDER / "dashboard_template.html"
 ALLOWED_VALUES_FILE = TOOL_FOLDER / "allowed_values.csv"
+CROSS_CHECKS_FILE = TOOL_FOLDER / "cross_checks.csv"
+# Statsbygg's IDS files are named ..._b3-1-architectural.ids, ..._b3-1_environmental_material.ids
+IDS_FILE_NAME = re.compile(r"_b(\d)-(\d)[-_]([a-z_]+)\.ids$", re.IGNORECASE)
 
 # Statsbygg fills free-text [Value] rules with example values ('1234567', 'Building name'),
 # so for these attributes a [Value] rule only means "must be filled in"
@@ -41,13 +46,29 @@ class Atom:
 
 @dataclass(eq=False)
 class Concept:
-    group: str       # ConceptRoot name, e.g. "200 Wall"
-    entity: str      # e.g. "IfcWall" (subclasses included)
+    group: str       # ConceptRoot / IDS specification name, e.g. "200 Wall"
+    entity: str      # e.g. "IfcWall" (subclasses included); None when `entities` is used
     label: str       # e.g. "Pset_WallCommon.IsExternal"
     rules: tuple
     applicability: tuple | None
     required: tuple | None
     required_by: set = field(default_factory=set)
+    entities: tuple = ()     # IDS: exact classes, without subclasses
+    predefined: str = None   # IDS: only objects with this PredefinedType
+    contains: tuple = ()     # cross-check: ((pset, property), ...) whose values must appear in the required property
+    description: str = ""    # what the requirement means, from the rules file
+
+    def scope(self):
+        """Which objects the concept applies to; concepts with the same scope share the lookup"""
+        return (self.group, self.entity, self.entities, self.predefined, id(self.applicability) if self.applicability else None)
+
+
+@dataclass
+class RuleSet:
+    concepts: list
+    phase: str               # shown in the report, e.g. "B3.1.1 Outline conceptual design ..."
+    short: str               # used in file names, e.g. "B3.1.1"
+    allowed: dict = field(default_factory=dict)  # allowed values that come with the rules (IDS)
 
 
 @dataclass
@@ -71,22 +92,27 @@ def main():
     if model.schema != "IFC4":
         print(f"Warning: Statsbygg requires IFC4, this model is {model.schema}")
 
-    concepts, phase = choose_exchange_requirement([rules_path] if rules_path else find_rule_files(RULES_FOLDERS))
-    allowed = load_allowed_values(ALLOWED_VALUES_FILE)
-    if allowed:
-        print(f"Checking allowed values for {len(allowed)} properties from {ALLOWED_VALUES_FILE.name}")
+    rules = choose_rules([rules_path] if rules_path else find_rule_files(RULES_FOLDERS))
+    own_allowed = load_allowed_values(ALLOWED_VALUES_FILE)
+    if own_allowed:
+        print(f"Checking allowed values for {len(own_allowed)} properties from {ALLOWED_VALUES_FILE.name}")
+    # A list in allowed_values.csv replaces the one in the rules
+    allowed = {**rules.allowed, **own_allowed}
+    cross_checks = load_cross_checks(CROSS_CHECKS_FILE)
+    concepts = rules.concepts + cross_check_concepts(rules.concepts, cross_checks)
     changed = migrate_designed_status(model)
 
     results = validate(model, concepts, allowed)
     print_summary(results)
+    phase = rules.phase
 
-    report_name = f"validation {Path(model_path).stem} {phase.split()[0]}"
+    report_name = f"validation {Path(model_path).stem} {rules.short}"
     report = ask_option("Export a report?", ["csv", "html dashboard", "both", "no"])
     if report in ("csv", "both"):
         export_csv(results, f"{report_name}.csv")
         print(f"File saved as {report_name}.csv")
     if report in ("html dashboard", "both"):
-        export_dashboard(results, model, model_path, phase, f"{report_name}.html")
+        export_dashboard(results, model, model_path, phase, f"{report_name}.html", allowed)
 
     if changed:
         save_file(model, model_path)
@@ -96,23 +122,25 @@ def main():
 
 def get_arguments(argv):
     if len(argv) < 2:
-        sys.exit("Usage: python Validation_Simba.py model.ifc [rules.mvdxml]")
+        sys.exit("Usage: python Validation_Simba.py model.ifc [rules.mvdxml or rules.ids]")
     if len(argv) > 3:
         sys.exit("Too many arguments")
     if not argv[1].lower().endswith(".ifc"):
         sys.exit("Not an IFC file")
     if len(argv) == 3:
-        if not argv[2].lower().endswith(".mvdxml"):
-            sys.exit("Not an mvdXML file")
+        if not argv[2].lower().endswith((".mvdxml", ".ids")):
+            sys.exit("Not an mvdXML or IDS file")
         return argv[1], Path(argv[2])
     return argv[1], None
 
 
 def find_rule_files(folders):
+    """mvdXML and IDS files in the folders and one level of folders inside them"""
     files = []
     for folder in folders:
-        files += sorted(folder.glob("*.mvdxml"))
-    # The same file in both folders should only be listed once
+        for pattern in ("*.mvdxml", "*.ids", "*/*.mvdxml", "*/*.ids"):
+            files += sorted(folder.glob(pattern))
+    # The same file in two places should only be listed once
     unique = {}
     for path in files:
         unique.setdefault(path.name, path)
@@ -161,6 +189,8 @@ def load_rules(path):
                 applicability,
                 required,
                 required_by,
+                # "<what this requirement means> : <what the IFC class is>"
+                description=clean_text(node.findtext(f"{MVD}Definitions/{MVD}Definition/{MVD}Body")).split(" : ")[0],
             ))
     return exchange_requirements, concepts
 
@@ -213,6 +243,184 @@ def make_label(name, required):
     return re.sub(r"^\S+\s+", "", (name or "").split(" : ")[0])
 
 
+# ---------- Reading IDS ----------
+# Statsbygg's IDS files (IDS 0.9.6, exported from BIMQ) use a small part of IDS: one entity per
+# specification (sometimes with a PredefinedType), then attribute and property requirements.
+# Each requirement becomes a Concept with the same kind of rules as the mvdXML, so both are checked the same way.
+
+def load_ids(path, fallback=None):
+    """Return (info, [Concept], {(pset, property): [allowed values]}).
+    `fallback` maps specification names to an applicability found in other IDS files, for
+    specifications exported with an empty one"""
+    try:
+        root = ET.parse(path).getroot()
+    except (FileNotFoundError, ET.ParseError):
+        sys.exit(f"Could not read rules file {path}")
+    info = {key: (root.findtext(f"{IDS}info/{IDS}{key}") or "").strip() for key in ("title", "milestone", "purpose")}
+
+    concepts, allowed, skipped = [], {}, []
+    for spec in root.iter(IDS + "specification"):
+        group = spec.get("name") or ""
+        applies = read_ids_applicability(spec.find(IDS + "applicability"))
+        if applies is None:
+            applies = (fallback or {}).get(group)
+        if applies is None:
+            skipped.append(group)
+            continue
+        entities, predefined = applies
+
+        requirements = spec.find(IDS + "requirements")
+        for facet in requirements if requirements is not None else ():
+            name = facet.findtext(f"{IDS}name/{IDS}simpleValue")
+            if facet.tag == IDS + "property":
+                pset = facet.findtext(f"{IDS}propertySet/{IDS}simpleValue")
+                ifc_type = (facet.get("datatype") or "IFCLABEL").upper()
+                if not (pset and name):
+                    continue
+                required = ("property", pset, name, ifc_type)
+                rules = property_rules(pset, name, ifc_type)
+                values = ids_allowed_values(facet.find(IDS + "value"))
+                if values:
+                    allowed.setdefault((pset, name), [])
+                    allowed[(pset, name)] += [v for v in values if v not in allowed[(pset, name)]]
+                label = f"{pset}.{name}"
+            elif facet.tag == IDS + "attribute" and name:
+                required = ("attribute", name)
+                rules = ("rule", [[Atom(False, name, "Exists", "TRUE")]])
+                label = ids_label(facet.get("instructions"), name)
+            else:
+                continue  # classification, material and partOf requirements aren't used by Statsbygg
+            # "0001- : ProjectNumber || Statsbygg official Project Number (seven digits)"
+            description = clean_text(facet.get("instructions")).split("||", 1)[-1].strip()
+            concepts.append(Concept(group, None, label, rules, None, required,
+                                    entities=entities, predefined=predefined, description=description))
+    if skipped:
+        print(f"Note: {Path(path).name}: {len(skipped)} specification(s) apply to nothing and were skipped: {', '.join(skipped)}")
+    return info, concepts, allowed
+
+
+def property_rules(pset, name, ifc_type):
+    """The element's own property, or else its type's, must have a value of the right type
+    (the same rule shape Statsbygg's mvdXML uses)"""
+    own = [Atom(False, "Set", "Value", pset), Atom(False, "PropertyName", "Value", name),
+           Atom(False, "Value", "Exists", "TRUE"), Atom(False, "Value", "Type", ifc_type)]
+    on_type = [Atom(True, "Set", "Value", pset), Atom(True, "PropertyName", "Value", name),
+               Atom(True, "Value", "Exists", "TRUE"), Atom(True, "Value", "Type", ifc_type)]
+    has_own = [Atom(False, "Set", "Value", pset), Atom(False, "PropertyName", "Value", name)]
+    return ("or", [("rule", [own]), ("and", [("nor", [("rule", [has_own])]), ("rule", [on_type])])])
+
+
+def read_ids_applicability(node):
+    """(entity names, predefined type or None), or None when the specification applies to nothing"""
+    entity = node.find(IDS + "entity") if node is not None else None
+    if entity is None:
+        return None
+    names = ids_values(entity.find(IDS + "name"))
+    if not names:
+        return None
+    predefined = ids_values(entity.find(IDS + "predefinedType"))
+    return tuple(names), (predefined[0] if predefined else None)
+
+
+def ids_values(node):
+    """A simpleValue, an enumeration, or a pattern that is just a list of names ("IFCWALL|IFCSLAB")"""
+    if node is None:
+        return []
+    simple = node.findtext(IDS + "simpleValue")
+    if simple:
+        return [simple.strip()]
+    values = [e.get("value") for e in node.iter(XS + "enumeration")]
+    for pattern in node.iter(XS + "pattern"):
+        values += pattern.get("value").split("|")
+    return [v.strip() for v in values if v and v.strip()]
+
+
+def ids_allowed_values(node):
+    """Allowed values for a property. A list with a single value is an example in Statsbygg's files
+    ("Matrikkelens bygningsnummer" for BuildingID), so it only means "must have a value"."""
+    if node is None:
+        return []
+    values = [e.get("value") for e in node.iter(XS + "enumeration")]
+    values = [v.strip().rstrip(".") for v in values if v and v.strip()]  # "UNSET." is a typo for UNSET
+    patterns = [re.compile(p.get("value")) for p in node.iter(XS + "pattern")]
+    if len(values) < 2:
+        values = []
+    return values + patterns
+
+
+def clean_text(text):
+    """Rule text without the broken characters some Statsbygg exports have (æøå that didn't survive)"""
+    return " ".join((text or "").replace("�", "").split())
+
+
+def ids_label(instructions, attribute):
+    """'0001- : ProjectNumber || Statsbygg official ...' -> 'ProjectNumber'"""
+    match = re.search(r":\s*([^|:]+?)\s*\|\|", instructions or "")
+    return match.group(1) if match else attribute
+
+
+def ids_fallback(paths):
+    """{specification name: applicability} from every IDS file, to fill in empty applicabilities"""
+    found = {}
+    for path in paths:
+        try:
+            root = ET.parse(path).getroot()
+        except ET.ParseError:
+            continue
+        for spec in root.iter(IDS + "specification"):
+            applies = read_ids_applicability(spec.find(IDS + "applicability"))
+            if applies is not None:
+                found.setdefault(spec.get("name"), applies)
+    return found
+
+
+def ids_phase(path, info):
+    """('B3.1', 'architectural') from the file name, or the milestone and file name for other IDS files"""
+    match = IDS_FILE_NAME.search(Path(path).name)
+    if match:
+        return f"B{match.group(1)}.{match.group(2)}", match.group(3).replace("_", " ").strip()
+    return info.get("milestone") or Path(path).stem, Path(path).stem
+
+
+# ---------- Cross-checks between properties ----------
+# e.g. NONS_Reference.RefString must contain the values of RefLocStorey, RefPriSysClass, ...
+
+def load_cross_checks(path):
+    """{(pset, property): ((pset, property), ...)} from cross_checks.csv; {} if there is no file"""
+    checks = {}
+    if not path.exists():
+        return checks
+    with open(path, newline="", encoding="utf-8-sig") as file:
+        for row in csv.DictReader(file):
+            name = (row.get("Property") or "").strip()
+            if name.startswith("#") or "." not in name:
+                continue
+            parts = [p.strip() for p in (row.get("Must contain") or "").split(";") if "." in p]
+            if parts:
+                checks[tuple(name.split(".", 1))] = tuple(tuple(p.split(".", 1)) for p in parts)
+    return checks
+
+
+def cross_check_concepts(concepts, checks):
+    """An extra requirement for every object group that requires a property with a cross-check"""
+    extra, seen = [], set()
+    for concept in concepts:
+        required = concept.required
+        if not (required and required[0] == "property" and (required[1], required[2]) in checks):
+            continue
+        key = (concept.scope(), required[1], required[2])
+        if key in seen:
+            continue
+        seen.add(key)
+        parts = checks[(required[1], required[2])]
+        extra.append(Concept(
+            concept.group, concept.entity, f"{required[1]}.{required[2]} contents", None, concept.applicability,
+            ("cross", required[1], required[2], parts), concept.required_by,
+            entities=concept.entities, predefined=concept.predefined, contains=parts,
+            description=f"The value must contain the values of {', '.join(part[1] for part in parts)} (from {CROSS_CHECKS_FILE.name})."))
+    return extra
+
+
 # ---------- Checking the model ----------
 
 class Checker:
@@ -224,16 +432,57 @@ class Checker:
         self._applicable = {}
 
     def applicable_elements(self, concept):
-        key = (concept.group, concept.entity)
+        key = concept.scope()
         if key not in self._applicable:
-            try:
-                elements = self.model.by_type(concept.entity)
-            except RuntimeError:
-                elements = []  # entity doesn't exist in this schema
+            if concept.entities:
+                # IDS: the class itself, not its subclasses
+                elements = []
+                for name in concept.entities:
+                    elements += self.by_type(name, include_subtypes=False)
+            else:
+                elements = self.by_type(concept.entity)
             if concept.applicability:
                 elements = [e for e in elements if self.evaluate(concept.applicability, e)]
+            if concept.predefined:
+                elements = [e for e in elements if self.predefined_type(e) == concept.predefined.upper()]
             self._applicable[key] = elements
         return self._applicable[key]
+
+    def by_type(self, name, include_subtypes=True):
+        try:
+            return list(self.model.by_type(name, include_subtypes))
+        except RuntimeError:
+            return []  # entity doesn't exist in this schema
+
+    def predefined_type(self, element):
+        """The element's PredefinedType, or its type's when the element's is NOTDEFINED or empty"""
+        value = attribute_value(element, "PredefinedType") or attribute_value(self.target(element, True), "PredefinedType")
+        return str(value).upper() if value else None
+
+    def property_text(self, element, pset, prop):
+        """A property's value as text, from the element or else its type; None if there is none"""
+        for target in (element, self.target(element, True)):
+            properties = self.properties(target).get(pset, {}) if target is not None else {}
+            if prop in properties:
+                nominal = properties[prop]
+                return None if nominal is None else display_value(nominal.wrappedValue)
+        return None
+
+    def check_contains(self, concept, element):
+        """Cross-check: (passed, value), or None when the object doesn't have the property at all
+        (the property's own requirement already reports that)"""
+        _, pset, prop, parts = concept.required
+        whole = self.property_text(element, pset, prop)
+        if whole is None:
+            return None
+        problems = []
+        for part_pset, part_prop in parts:
+            part = self.property_text(element, part_pset, part_prop)
+            if part is None:
+                problems.append(f"no {part_prop}")
+            elif part not in whole:
+                problems.append(f"{part_prop} {part} not in it")
+        return (not problems, whole + (f" ({'; '.join(problems)})" if problems else ""))
 
     def evaluate(self, node, element):
         kind, children = node
@@ -479,7 +728,12 @@ def validate(model, concepts, allowed=None):
     results = []
     for concept in concepts:
         for element in checker.applicable_elements(concept):
-            results.append(Result(concept, element, checker.evaluate(concept.rules, element), checker.value_of(concept, element)))
+            if concept.contains:
+                outcome = checker.check_contains(concept, element)
+                if outcome is not None:
+                    results.append(Result(concept, element, *outcome))
+            else:
+                results.append(Result(concept, element, checker.evaluate(concept.rules, element), checker.value_of(concept, element)))
     return results
 
 
@@ -528,7 +782,12 @@ def export_csv(results, filename):
 STATUS_CODES = {"failed": 0, "passed": 1, "missing": 2}
 
 
-def dashboard_data(results, model, model_path, phase):
+def allowed_text(values):
+    """Allowed values as the dashboard shows them; patterns start with "re:" as in allowed_values.csv"""
+    return [f"re:{v.pattern}" if isinstance(v, re.Pattern) else v for v in values]
+
+
+def dashboard_data(results, model, model_path, phase, allowed=None):
     requirements = {}
     objects = {}
     values = {}
@@ -538,13 +797,16 @@ def dashboard_data(results, model, model_path, phase):
     for result in results:
         concept, element = result.concept, result.element
         required = concept.required
-        is_property = required is not None and required[0] == "property"
+        is_property = required is not None and required[0] in ("property", "cross")
         requirement = requirements.setdefault(concept, {
             "group": concept.group,
             "label": concept.label,
             "index": len(requirements),
             "pset": required[1] if is_property else None,
-            "type": required[3] if is_property else None,
+            "type": required[3] if is_property and required[0] == "property" else None,
+            "info": concept.description,
+            "allowed": allowed_text((allowed or {}).get((required[1], required[2]), []))
+                       if is_property and required[0] == "property" else [],
             "passed": 0,
             "failed": 0,
             "missing": 0,
@@ -580,11 +842,11 @@ def dashboard_data(results, model, model_path, phase):
     }
 
 
-def export_dashboard(results, model, model_path, phase, filename):
+def export_dashboard(results, model, model_path, phase, filename, allowed=None):
     if not DASHBOARD_TEMPLATE.exists():
         print(f"Dashboard not saved: {DASHBOARD_TEMPLATE.name} must be in the same folder as this script")
         return
-    data = json.dumps(dashboard_data(results, model, model_path, phase))
+    data = json.dumps(dashboard_data(results, model, model_path, phase, allowed))
     # "</" would end the <script> block early if an object name contained "</script>"
     html = DASHBOARD_TEMPLATE.read_text(encoding="utf-8").replace("/*DATA*/null", data.replace("</", "<\\/"))
     Path(filename).write_text(html, encoding="utf-8")
@@ -626,8 +888,21 @@ def write_property(model, element, pset_name, prop_name, ifc_type, value):
 
 # ---------- Prompts ----------
 
+def choose_rules(rule_files):
+    """Pick the rules: mvdXML or IDS when both are there, then the phase (and for IDS the discipline)"""
+    mvdxml = [p for p in rule_files if p.suffix.lower() == ".mvdxml"]
+    ids = [p for p in rule_files if p.suffix.lower() == ".ids"]
+    if not mvdxml and not ids:
+        sys.exit("No mvdXML or IDS rules found")
+    if mvdxml and ids:
+        use_ids = ask_option("Rules format? mvdXML has the .1/.5/.9 steps, IDS covers every discipline", ["mvdxml", "ids"]) == "ids"
+    else:
+        use_ids = bool(ids)
+    return choose_ids(ids) if use_ids else choose_exchange_requirement(mvdxml)
+
+
 def choose_exchange_requirement(rule_files):
-    """Pick a phase across all rule files. Returns (concepts required for it, phase name)"""
+    """Pick a phase across all mvdXML files"""
     options = []
     for path in rule_files:
         exchange_requirements, concepts = load_rules(path)
@@ -638,7 +913,33 @@ def choose_exchange_requirement(rule_files):
 
     print("Exchange requirements:")
     name, uuid, concepts = options[ask_number("Validate against", [o[0] for o in options])]
-    return [c for c in concepts if uuid in c.required_by], name
+    return RuleSet([c for c in concepts if uuid in c.required_by], name, name.split()[0])
+
+
+def choose_ids(rule_files):
+    """Pick a phase, then a discipline, among the IDS files"""
+    files = {}  # phase -> {discipline: (path, info)}
+    for path in rule_files:
+        try:
+            root = ET.parse(path).getroot()
+        except ET.ParseError:
+            sys.exit(f"Could not read rules file {path}")
+        info = {"milestone": (root.findtext(f"{IDS}info/{IDS}milestone") or "").strip()}
+        phase, discipline = ids_phase(path, info)
+        files.setdefault(phase, {})[discipline] = (path, info)
+
+    phases = sorted(files)
+    print("Phases (IDS):")
+    phase = phases[ask_number("Validate against", [f"{p} {next(iter(files[p].values()))[1]['milestone']}".strip() for p in phases])]
+    disciplines = sorted(files[phase])
+    discipline = disciplines[ask_number("Discipline", disciplines)] if len(disciplines) > 1 else disciplines[0]
+
+    path, info = files[phase][discipline]
+    # Specifications exported without an applicability borrow it from the same name in the other IDS files
+    neighbours = set(rule_files) | {p for f in rule_files for p in Path(f).parent.glob("*.ids")}
+    _, concepts, allowed = load_ids(path, ids_fallback(sorted(neighbours)))
+    name = f"{phase} {discipline} (IDS) {info['milestone']}".strip()
+    return RuleSet(concepts, name, f"{phase} {discipline}", allowed)
 
 
 def ask_number(prompt, options):
