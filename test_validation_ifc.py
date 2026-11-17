@@ -401,3 +401,22 @@ def test_oslobygg_rules_shipped():
         _, concepts, _ = Validation_IFC.load_ids(path)
         labels = {c.label for c in concepts}
         assert {"Forvaltnings-ID", "Bygg-ID", "Romnummer", "Pset_WallCommon.IsExternal"} <= labels
+
+
+def test_storeys():
+    """Objects are listed under their storey, lowest first, with the parts of aggregated objects"""
+    model, typed_wall, lone_wall = make_model()
+    run = ifcopenshell.api.run
+    ground = run("root.create_entity", model, ifc_class="IfcBuildingStorey", name="E01")
+    ground.Elevation = 0.0
+    upper = run("root.create_entity", model, ifc_class="IfcBuildingStorey", name="E02")
+    upper.Elevation = 3.5
+    stair = run("root.create_entity", model, ifc_class="IfcStair", name="Trapp")
+    flight = run("root.create_entity", model, ifc_class="IfcStairFlight", name="Løp")
+    run("aggregate.assign_object", model, relating_object=stair, products=[flight])
+    run("spatial.assign_container", model, relating_structure=upper, products=[lone_wall])
+    run("spatial.assign_container", model, relating_structure=ground, products=[typed_wall, stair])
+    floors = Validation_IFC.storeys(model)
+    assert [f["name"] for f in floors] == ["E01", "E02"]
+    assert floors[0]["steps"] == sorted([typed_wall.id(), stair.id(), flight.id()])
+    assert floors[1]["steps"] == [lone_wall.id()]

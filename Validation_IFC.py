@@ -850,6 +850,44 @@ def allowed_text(values):
     return [f"re:{v.pattern}" if isinstance(v, re.Pattern) else v for v in values]
 
 
+def storeys(model):
+    """[{"name", "elevation", "steps": [file numbers of the objects on it]}], lowest first, for the 3D
+    viewer's floor filter. Covers every object, also those without requirements, and the parts of
+    objects (stair flights, curtain wall panels) that sit on a storey through their whole."""
+    found = {}
+
+    def storey_of(spatial):
+        # A space or zone belongs to the storey it is part of
+        for _ in range(10):
+            if spatial is None or spatial.is_a("IfcBuildingStorey"):
+                return spatial
+            spatial = ifcopenshell.util.element.get_aggregate(spatial)
+        return None
+
+    def add(storey, element, depth=0):
+        found.setdefault(storey, []).append(element.id())
+        if depth < 5:
+            for rel in getattr(element, "IsDecomposedBy", ()):
+                for part in rel.RelatedObjects:
+                    add(storey, part, depth + 1)
+
+    for rel in model.by_type("IfcRelContainedInSpatialStructure"):
+        storey = storey_of(rel.RelatingStructure)
+        if storey is not None:
+            for element in rel.RelatedElements:
+                add(storey, element)
+
+    def elevation(storey):
+        try:
+            return float(storey.Elevation) if storey.Elevation is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    ordered = sorted(found, key=lambda s: (elevation(s) is None, elevation(s) or 0, s.id()))
+    return [{"name": s.Name or s.LongName or f"Storey #{s.id()}", "elevation": elevation(s), "steps": sorted(set(found[s]))}
+            for s in ordered]
+
+
 def dashboard_data(results, model, model_path, phase, allowed=None, client="statsbygg"):
     requirements = {}
     objects = {}
@@ -904,6 +942,7 @@ def dashboard_data(results, model, model_path, phase, allowed=None, client="stat
         "objects": list(objects.values()),
         "values": list(values),
         "checks": checks,
+        "storeys": storeys(model),
     }
 
 

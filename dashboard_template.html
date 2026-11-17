@@ -211,7 +211,14 @@
   }
   .file-btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
   .filters button:disabled, .filters select:disabled { opacity: 0.5; cursor: default; }
-  .viewer-panel { max-height: 540px; overflow: auto; font-size: 13px; }
+  .viewer-side { display: flex; flex-direction: column; gap: 14px; max-height: 540px; min-width: 0; }
+  .viewer-stats { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .viewer-stats[hidden] { display: none; }
+  .viewer-stats .stats-body { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; }
+  .viewer-stats .value { font-size: 28px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .viewer-stats .donut { width: 96px; height: 96px; }
+  .viewer-stats .donut-legend { margin-top: 10px; gap: 4px; font-size: 12px; }
+  .viewer-panel { flex: 1; min-height: 0; overflow: auto; font-size: 13px; }
   .viewer-panel p { margin: 0; }
   .viewer-panel h3 { font-size: 15px; font-weight: 600; margin: 2px 0; overflow-wrap: anywhere; }
   .panel-head { padding-bottom: 10px; border-bottom: 1px solid var(--grid); }
@@ -231,6 +238,7 @@
   @media (max-width: 860px) {
     .grid-top, .grid-charts, .viewer-wrap { grid-template-columns: 1fr; }
     .viewer { height: 380px; }
+    .viewer-side { max-height: none; }
     .viewer-panel { max-height: 360px; }
   }
   @media (max-width: 520px) {
@@ -281,6 +289,7 @@
       </div>
       <div class="filters">
         <select id="m-colour" aria-label="Colour by" disabled></select>
+        <select id="m-floor" aria-label="Floor" disabled hidden></select>
         <select id="m-show" aria-label="Which objects" disabled>
           <option value="all">All objects</option>
           <option value="issues">Only not passing</option>
@@ -289,7 +298,7 @@
         <button class="theme-toggle" id="m-reload" type="button" hidden>Load another file</button>
       </div>
     </div>
-    <div class="legend"><span><i style="background:var(--good)"></i>Passed</span><span><i style="background:var(--critical)"></i>Failed</span><span><i style="background:var(--warning)"></i>Missing</span><span><i style="background:var(--axis)"></i>No requirement</span><span><i style="background:var(--accent)"></i>Selected</span></div>
+    <div class="legend"><span><i style="background:var(--good)"></i>Passed</span><span><i style="background:var(--critical)"></i>Failed</span><span><i style="background:var(--warning)"></i>Missing</span><span><i style="background:var(--axis)"></i>No requirement</span><span><i style="background:var(--accent)"></i>Selected</span><span id="m-floor-key" hidden><i style="background:var(--axis);opacity:.6"></i>Other floors</span></div>
     <div class="viewer-wrap">
       <div class="viewer" id="m-viewer">
         <div class="viewer-msg" id="m-drop">
@@ -301,7 +310,10 @@
         </div>
         <div class="viewer-msg" id="m-msg" hidden></div>
       </div>
-      <aside class="viewer-panel" id="m-panel"></aside>
+      <div class="viewer-side">
+        <div class="viewer-stats" id="m-stats" hidden aria-live="polite"></div>
+        <aside class="viewer-panel" id="m-panel"></aside>
+      </div>
     </div>
     <div class="count" id="m-note"></div>
   </div>
@@ -521,7 +533,7 @@ const heroParts = [
   { label: "Missing", count: totals.missing, color: "var(--warning)" },
 ];
 
-function donut(parts) {
+function donut(parts, unit = "checks") {
   const NS = "http://www.w3.org/2000/svg";
   const r = 50, size = 128, circumference = 2 * Math.PI * r;
   const total = parts.reduce((a, p) => a + p.count, 0);
@@ -545,7 +557,7 @@ function donut(parts) {
     // Start at 12 o'clock and go clockwise
     circle.setAttribute("stroke-dashoffset", -offset);
     circle.setAttribute("transform", `rotate(-90 ${size / 2} ${size / 2})`);
-    const tip = `<b>${part.label}</b><br>${fmt(part.count)} of ${fmt(total)} checks (${pct(part.count, total)}%)`;
+    const tip = `<b>${part.label}</b><br>${fmt(part.count)} of ${fmt(total)} ${unit} (${pct(part.count, total)}%)`;
     circle.addEventListener("mousemove", (e) => showTip(e, tip));
     circle.addEventListener("mouseleave", hideTip);
     svg.append(circle);
@@ -911,6 +923,10 @@ const IFCLITE = "https://cdn.jsdelivr.net/npm/@ifc-lite/wasm@12.2.0/pkg/";
 const SKIPPED = new Set(["IfcOpeningElement", "IfcSpace", "IfcAnnotation", "IfcGrid", "IfcVirtualElement"]);
 
 const objectByStep = new Map(DATA.objects.map((o) => [o.step, o.index]));
+// Which floor each object in the file is on (reports made before floors were added have none)
+const FLOORS = DATA.storeys || [];
+const floorByStep = new Map();
+FLOORS.forEach((floor, i) => floor.steps.forEach((step) => floorByStep.set(step, i)));
 const message = $("m-msg"), drop = $("m-drop");
 let viewer = null, loading = false;
 
@@ -972,7 +988,8 @@ async function load(file) {
     function receive(meshes, jobCount) {
       for (const m of meshes) {
         if (SKIPPED.has(m.type)) continue;
-        viewer.add(objectByStep.has(m.id) ? objectByStep.get(m.id) : -1, m.positions, m.indexes, m.origin);
+        viewer.add(objectByStep.has(m.id) ? objectByStep.get(m.id) : -1, m.positions, m.indexes, m.origin,
+          floorByStep.has(m.id) ? floorByStep.get(m.id) : -1);
       }
       done += jobCount;
       say(`Building the 3D model … ${Math.round((done / total) * 100)}%`);
@@ -1002,7 +1019,7 @@ async function load(file) {
     viewer.finish(file.name, seconds, failed);
     say("");
     $("m-reload").hidden = false;
-    for (const id of ["m-colour", "m-show", "m-fit"]) $(id).disabled = false;
+    for (const id of ["m-colour", "m-floor", "m-show", "m-fit"]) $(id).disabled = false;
     // Table rows can now jump to their object
     renderValueTable();
     renderObjects();
@@ -1218,14 +1235,14 @@ function createViewer(THREE, OrbitControls) {
   let chunks = [], meshes = [], pending = [], pendingVertices = 0, itemsOf = new Map();
   // Everything is drawn relative to the first object's origin: float32 positions lose precision far from 0,0,0
   let base = null;
-  function add(obj, positions, indexes, origin) {
+  function add(obj, positions, indexes, origin, floor = -1) {
     if (!indexes.length) return;
     if (!base) base = [origin[0], origin[1], origin[2]];
     const dx = origin[0] - base[0], dy = origin[1] - base[1], dz = origin[2] - base[2];
     for (let i = 0; i < positions.length; i += 3) {
       positions[i] += dx; positions[i + 1] += dy; positions[i + 2] += dz;
     }
-    pending.push({ obj, positions, indexes });
+    pending.push({ obj, positions, indexes, floor });
     pendingVertices += positions.length / 3;
   }
   // Merges what has arrived into one buffer, so the model is drawn in a few big pieces
@@ -1236,7 +1253,7 @@ function createViewer(THREE, OrbitControls) {
     const chunk = { items: [], index: chunks.length };
     let v = 0, n = 0;
     for (const p of pending) {
-      const item = { obj: p.obj, chunk: chunk.index, vStart: v, vCount: p.positions.length / 3, iStart: n, iCount: p.indexes.length };
+      const item = { obj: p.obj, floor: p.floor, chunk: chunk.index, vStart: v, vCount: p.positions.length / 3, iStart: n, iCount: p.indexes.length };
       positions.set(p.positions, v * 3);
       for (let i = 0; i < p.indexes.length; i++) indexes[n + i] = p.indexes[i] + v;
       v += item.vCount; n += item.iCount;
@@ -1256,12 +1273,20 @@ function createViewer(THREE, OrbitControls) {
     chunk.geometry = geometry;
     const mesh = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
     mesh.userData.chunk = chunk;
-    chunks.push(chunk); meshes.push(mesh); scene.add(mesh);
+    // Objects on other floors are drawn by a second, see-through mesh that shares the vertices
+    const ghostGeometry = new THREE.BufferGeometry();
+    ghostGeometry.setAttribute("position", geometry.attributes.position);
+    ghostGeometry.setIndex(new THREE.BufferAttribute(new Uint32Array(indexes.length), 1));
+    ghostGeometry.boundingSphere = geometry.boundingSphere;
+    chunk.ghost = new THREE.Mesh(ghostGeometry, ghostMaterial);
+    chunk.ghost.renderOrder = 0.5;
+    chunks.push(chunk); meshes.push(mesh); scene.add(mesh); scene.add(chunk.ghost);
     paintChunk(chunk, palette());
     if (!moved) fitAll(); else render();
   }
   function clear() {
     for (const mesh of meshes) { scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
+    for (const chunk of chunks) { scene.remove(chunk.ghost); chunk.ghost.geometry.dispose(); }
     chunks = []; meshes = []; pending = []; pendingVertices = 0; itemsOf = new Map(); base = null;
     selected = -1; highlight = null; moved = false;
     drawOverlay();
@@ -1269,7 +1294,8 @@ function createViewer(THREE, OrbitControls) {
   }
 
   // ----- Colours -----
-  let colourBy = "", onlyIssues = false, highlight = null, selected = -1;
+  let colourBy = "", onlyIssues = false, highlight = null, selected = -1, floor = -1;  // floor -1: all floors
+  const ghostMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.1, depthWrite: false });
   const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   function palette() {
     const dark = css("color-scheme") === "dark";
@@ -1277,6 +1303,7 @@ function createViewer(THREE, OrbitControls) {
     return {
       pass: rgb("#0ca30c"), fail: rgb("#d03b3b"), missing: rgb("#fab219"),
       none: rgb(dark ? "#4d4d48" : "#cfcec6"), selected: new THREE.Color(dark ? "#3987e5" : "#2a78d6"),
+      ghost: new THREE.Color(dark ? "#9a9a92" : "#6f6e68"),
     };
   }
   const statusOf = (obj) => {
@@ -1285,10 +1312,19 @@ function createViewer(THREE, OrbitControls) {
     const row = byObject[obj].get(colourBy);
     return row ? CODE[row.status] : null;
   };
-  function paintChunk(chunk, colours) {
+  function paintChunk(chunk, colours, shown) {
     const colour = chunk.geometry.attributes.color.array, index = chunk.geometry.index.array;
-    let drawn = 0;
+    const ghostIndex = chunk.ghost.geometry.index.array;
+    let drawn = 0, ghosts = 0;
     for (const item of chunk.items) {
+      // On another floor: only an outline of grey glass, which can't be clicked
+      const other = floor >= 0 && item.floor !== floor;
+      for (let i = item.iStart; i < item.iStart + item.iCount; i++) ghostIndex[i] = other ? chunk.full[i] : item.vStart;
+      if (other) {
+        for (let i = item.iStart; i < item.iStart + item.iCount; i++) index[i] = item.vStart;
+        ghosts++;
+        continue;
+      }
       const status = statusOf(item.obj);
       const dimmed = highlight && !highlight.has(item.obj);
       const [r, g, b] = status && !dimmed ? colours[status] : colours.none;
@@ -1298,19 +1334,56 @@ function createViewer(THREE, OrbitControls) {
       // Hidden objects keep their place in the buffers but draw nothing
       const hide = onlyIssues && (status === null || status === "pass" || dimmed);
       drawn += !hide;
+      // Objects in colour count for the chart (one object can be drawn in several pieces)
+      if (shown && !hide && status && !dimmed) shown.set(item.obj, status);
       for (let i = item.iStart; i < item.iStart + item.iCount; i++) index[i] = hide ? item.vStart : chunk.full[i];
     }
     chunk.geometry.attributes.color.needsUpdate = true;
     chunk.geometry.index.needsUpdate = true;
+    chunk.ghost.geometry.index.needsUpdate = true;
+    chunk.ghost.visible = ghosts > 0;
     return drawn;
   }
   function paint() {
     if (!chunks.length) return;
     const colours = palette();
     overlay.material.color = colours.selected;
-    const drawn = chunks.reduce((n, chunk) => n + paintChunk(chunk, colours), 0);
+    ghostMaterial.color = colours.ghost;
+    const shown = new Map();
+    const drawn = chunks.reduce((n, chunk) => n + paintChunk(chunk, colours, shown), 0);
     say(drawn ? "" : "No objects to show with these filters");
+    showStats(shown);
     render();
+  }
+
+  // ----- Pass rate of what is in view -----
+  function showStats(shown) {
+    const stats = $("m-stats");
+    const counts = { pass: 0, fail: 0, missing: 0 };
+    for (const status of shown.values()) counts[status]++;
+    const total = counts.pass + counts.fail + counts.missing;
+    const parts = [
+      { label: "Passed", count: counts.pass, color: "var(--good)" },
+      { label: "Failed", count: counts.fail, color: "var(--critical)" },
+      { label: "Missing", count: counts.missing, color: "var(--warning)" },
+    ];
+    const scope = [floor >= 0 ? `Floor ${FLOORS[floor].name}` : "All floors", colourBy || "all requirements"];
+    stats.hidden = false;
+    stats.replaceChildren(
+      el("div", { class: "sub", text: "Objects in view" }),
+      el("div", { class: "muted", style: "font-size:12px", text: scope.join(" · ") }),
+      total
+        ? el("div", { class: "stats-body" },
+            el("div", {},
+              el("div", { class: "value", text: `${pct(counts.pass, total)}%` }),
+              el("div", { class: "sub", text: `${fmt(counts.pass)} of ${fmt(total)} passed` })),
+            donut(parts, "objects"))
+        : el("p", { class: "muted", style: "margin-top:8px", text: "No checked objects in view." }),
+      total ? el("div", { class: "donut-legend" }, ...parts.map((p) => el("div", {},
+        el("i", { style: `background:${p.color}` }),
+        el("span", { text: p.label }),
+        el("span", { class: "num", text: fmt(p.count) }),
+        el("span", { class: "share", text: `${pct(p.count, total)}%` })))) : null);
   }
 
   // ----- Camera -----
@@ -1339,6 +1412,10 @@ function createViewer(THREE, OrbitControls) {
     render();
   }
   function fitAll() {
+    if (floor >= 0) {
+      const onFloor = chunks.flatMap((chunk) => chunk.items.filter((item) => item.floor === floor));
+      if (onFloor.length) return frame(boxOf(onFloor));
+    }
     const bounds = new THREE.Box3();
     for (const mesh of meshes) bounds.expandByObject(mesh);
     frame(bounds);
@@ -1412,6 +1489,14 @@ function createViewer(THREE, OrbitControls) {
   colourSelect.addEventListener("change", () => { colourBy = colourSelect.value; highlight = null; select(selected); });
   $("m-show").addEventListener("change", () => { onlyIssues = $("m-show").value === "issues"; paint(); });
   $("m-fit").addEventListener("click", fitAll);
+  const floorSelect = $("m-floor");
+  function showFloor(value) {
+    floor = value;
+    floorSelect.value = String(value);
+    $("m-floor-key").hidden = floor < 0;
+    paint();
+  }
+  floorSelect.addEventListener("change", () => { showFloor(Number(floorSelect.value)); moved = true; fitAll(); });
   // Repaint when the light/dark theme changes
   new MutationObserver(paint).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", paint);
@@ -1437,6 +1522,9 @@ function createViewer(THREE, OrbitControls) {
     focus(obj) {
       if (!itemsOf.has(obj)) return;
       moved = true;
+      // An object on another floor would be see-through: show its floor instead
+      const own = itemsOf.get(obj)[0].floor;
+      if (floor >= 0 && own !== floor) showFloor(own);
       select(obj);
       frame(boxOf(itemsOf.get(obj)).expandByScalar(3));
       $("model-card").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1445,6 +1533,11 @@ function createViewer(THREE, OrbitControls) {
 
   return { add, flush, clear, finish, count: () => meshes.length };
 }
+
+// Floors, lowest first; the list only shows when the model has more than one
+$("m-floor").append(el("option", { value: "-1", text: "All floors" }),
+  ...FLOORS.map((f, i) => el("option", { value: String(i), text: f.name })));
+$("m-floor").hidden = FLOORS.length < 2;
 
 // Colour-by options can be filled in before a model is loaded
 $("m-colour").append(el("option", { value: "", text: "Worst result, all requirements" }),
