@@ -5,7 +5,7 @@ Checks an IFC model against a client's BIM requirements: Statsbygg's SIMBA 2.1 r
 The requirements are read from Statsbygg's own rule files in the `Simba Rules` folder, in either of two formats:
 
 - **mvdXML** (architects, ARK): splits each phase into the steps .1, .5 and .9, and includes the PredefinedType and georeferencing checks.
-- **IDS** (all 11 disciplines): the format Statsbygg now uses in its own checking platform (AnkerDB). Each file covers a whole phase at the .9 level.
+- **IDS** (all 11 disciplines): the format Statsbygg now uses in its own checking platform. Each file covers a whole phase at the .9 level.
 
 The tool has no property names written into it, so a new release of the rule files can be dropped in without changing the code.
 
@@ -100,16 +100,53 @@ NONS_Thermal.ThermalTransmittanceReq,"re:\d+([.,]\d+)?",U-value as a number
 - **Shipped lists:** `NONS_Process.ProcessStatus` is limited to MMI codes, following SIMBA 2.1 Veiledning B.3.1. A primary code is a whole hundred (e.g. 200 Ferdig konsept, 300 Underlag for detaljering, 400 Produksjonsunderlag). A secondary code adds x25 etablert for kontroll, x50 kontrollert or x75 akseptert, e.g. `250`. The other lines are commented-out examples.
 - **Validation:** a value that isn't on the list fails the requirement, just like a missing value. This applies whether the value is on the object or on its type.
 
+## TFM codes (Statsbygg PA 0805 and PA 0802)
+
+SIMBA 2.1 requires the TFM code in `NONS_Reference.RefString` (from B4.1) in "the building owner's preferred format". For Statsbygg that format is set by [PA 0805 Bruk av NS-TFM i Statsbygg](https://dok.statsbygg.no/wp-content/uploads/2024/02/PA-0805-Bruk-av-Standard-Norges-Tverrfaglig-Merkesystem-NS-TFM-i-Statsbygg-rev-04.pdf) (rev. 04, March 2025): the *normal TFM-ID with component type*. Statsbygg's older format, [PA 0802 Tverrfaglig merkesystem](https://dok.statsbygg.no/), is still maintained (code lists rev. 5, February 2026), so both are accepted. The tool tells them apart by the location sign: `++` is PA 0805, `+` is PA 0802.
+
+```
+++AAAAAA=NNNN.nnn.nn(n)-BBBnnn%BBB.nnn.nnn
+++123456=3600.001.04-RTA001%RTA.001.002      PA 0805 (NS-TFM)
++123456=244.001-DI001T                       PA 0802, component type
++123456=244.001-DI001                        PA 0802, component (used in parallel with the type)
+```
+
+For Statsbygg rules, every object group that requires `RefString` gets an extra requirement, `NONS_Reference.RefString TFM format`. Objects without a RefString are left out, since the property's own requirement already reports them. A failing value says what is wrong, e.g. `++123456=2300.001-QQA001%QQA.001.001 (system code 2300 is not used by Statsbygg; use 2310, 2320, 2330 or 2340)`.
+
+| Part | Checked |
+|---|---|
+| `++AAAAAA` location | the 6-digit building number |
+| `=NNNN.nnn` system | 4-digit system code and 3-digit number. Not the codes PA 0805 rules out: 2300, 2400, 2500, 2600, 2700, 3100, 3300, 3400, 3500, 3601–3607 (air handling only uses 3600), 4600, 5210, 5230, 5240, 7600, 7700 |
+| `.nn(n)` sub-number | none for 2xxx; `.04`/`.05` for 32, 35, 37; `.01`–`.08` for 36; 3 digits for 4xxx and 5xxx. Not used or not required elsewhere |
+| `-BBBnnn` component | 3 letters and 3 digits, no separator |
+| `%BBB.nnn.nnn` type | component code, 3-digit number and a 2- or 3-digit sub-number (PA 0805 shows `.nn` in its heading but `.nnn` in its examples, so both pass) |
+| `<…>`, `==…`, `(…)` | not used by Statsbygg, so they fail |
+| `–` (dash) | fails in both formats: use a plain hyphen `-` (the PA 0802 PDF prints an en dash) |
+
+**PA 0802** (`+AAAAAA=NNN.nnn-BBnnn(T)`): the 6-digit building number, a 3-digit system code with a 3-digit number, and a 2-letter component code with a 3-digit number, plus `T` for a component type. The system code must be in the PA 0802 system list and marked for use in TFM. A code marked *Skal ikke benyttes i TFM* fails, with the group code when that one is used, e.g. `+123456=315.001-SQ001 (system code 315 is not used in TFM (PA 0802); use 310)`. The component code must be in the PA 0802 component list.
+
+**Statsbygg's lists.** The `Statsbygg TFM` folder holds code lists taken from Statsbygg's public documents:
+
+| File | From | Used for |
+|---|---|---|
+| `pa0802_system_codes.csv` | PA 0802 vedlegg 9.1 Systemkodeliste, rev. 5 | PA 0802 system codes, and whether each is used in TFM |
+| `pa0802_component_codes.csv` | PA 0802 vedlegg 9.2 Komponentkodeliste | PA 0802 component codes |
+| `pa0805_system_codes.csv` | PA 0702 vedlegg 1-2 Dokumentasjonskrav iht. PA 0805, rev. 5 | NS 3451 system codes marked *Skal ikke benyttes!* fail (adds 4700 and 4800 to PA 0805's list) |
+
+When Statsbygg publishes a new revision, put the PDFs in `PDF_statsbygg` and run `python "Statsbygg TFM/make_tfm_lists.py"` (needs `pdftotext` from xpdf or poppler). Check the counts it prints.
+
+**Do the NS-TFM codes exist?** PA 0702 only names the system codes Statsbygg has documentation requirements for, so a code missing from it isn't failed. The full lists of valid codes are in NS 3451:2022 (system codes) and NS 3457-8:2021 (component codes), which are sold by Standard Norge and can't be shipped with the tool. If you have them, put them in a `TFM codes` folder next to the tool, as Excel or CSV files with `3451` and `3457` in their names, e.g. `TFM codes/NS 3451 systemkoder.xlsx`. Every cell that starts with a code (`2310 Bærende ytterveggssystemer`, `RTA`) is read, so the layout doesn't matter. The tool then also fails codes that aren't in the standards. The folder is in `.gitignore`: keep it out of the GitHub repo.
+
 ## Cross-checks between properties
 
 Some values must agree with each other. `cross_checks.csv` lists properties whose value must contain the values of other properties:
 
 ```csv
 Property,Must contain,Source
-NONS_Reference.RefString,NONS_Reference.RefLocStorey;NONS_Reference.RefPriSysClass;NONS_Reference.RefCompClass;NONS_Reference.RefCompOccNo,TFM reference string
+# NONS_Reference.RefString,NONS_Reference.RefLocStorey;NONS_Reference.RefPriSysClass;NONS_Reference.RefCompClass;NONS_Reference.RefCompOccNo,TFM reference string
 ```
 
-- The shipped row checks that the TFM reference string `RefString` contains the storey, system, component class and occurrence number. It follows the check shown in Statsbygg's AnkerDB setup. SIMBA says the `RefString` format is agreed per project, so edit or remove the row to match yours.
+- The shipped row checks that `RefString` contains the storey, system, component class and occurrence number. It is switched off (`#`): SIMBA 2.1 doesn't require those four properties, and the RefString format is now checked by [PA 0805 / PA 0802](#tfm-codes-statsbygg-pa-0805-and-pa-0802). Remove the `#` if your project uses them.
 - It runs for every object group that requires the first property, and shows up as its own requirement, e.g. `NONS_Reference.RefString contents`.
 - Objects without the first property are left out: its own requirement already reports them as missing.
 - The check fails if one of the listed properties is missing or its value isn't in the first one. The value shown says why, e.g. `+B01=360.001-02 (RefCompOccNo 07 not in it)`.
@@ -125,7 +162,7 @@ Every check gets one of three statuses:
 | Status | Meaning |
 |---|---|
 | **Passed** | The value is there and valid. |
-| **Failed** | There is a value, but it is wrong: the wrong value type (e.g. text instead of a boolean), not on the allowed list, outside IFC's limits, or not matching a cross-check. |
+| **Failed** | There is a value, but it is wrong: the wrong value type (e.g. text instead of a boolean), not on the allowed list, outside IFC's limits, or not matching a cross-check or the TFM format. |
 | **Missing** | There is no value at all: the property, attribute, type or georeferencing is not in the model. |
 
 The CSV's `Validation` column shows `PASSED`, `FAILED` or `MISSING`. The dashboard shows them in green, red and yellow, each with its own icon.
@@ -165,7 +202,8 @@ Each mvdXML file has *concept roots* (object groups such as `200 Wall`), each wi
 | Predefined type is set (mvdXML only) | `PredefinedType` on the object or its type |
 | Object has a type (mvdXML only) | `IfcWallType` assigned |
 | Georeferencing (mvdXML only) | `IfcMapConversion` with an `EPSG:` CRS on the Body context |
-| Values agree (cross-checks) | `RefString` contains `RefLocStorey` … |
+| TFM code format (Statsbygg) | `RefString` follows PA 0805 or PA 0802 |
+| Values agree (cross-checks) | `RefString` contains `RefLocStorey` … (off by default) |
 
 ### How the rules are interpreted
 
@@ -227,6 +265,9 @@ Validation_IFC/
 ├── dashboard_template.html       layout of the HTML dashboard (must stay next to Validation_IFC.py)
 ├── allowed_values.csv            your lists of allowed values (optional)
 ├── cross_checks.csv              properties that must contain other properties' values (optional)
+├── TFM codes/                    your own NS 3451 / NS 3457-8 code lists (optional; never upload)
+├── Statsbygg TFM/                Statsbygg's PA 0802 and PA 0702 code lists (CSV) and make_tfm_lists.py
+├── PDF_statsbygg/                Statsbygg's PDFs the lists are made from (optional)
 ├── test_validation_ifc.py      tests
 ├── README.md
 └── Simba Rules/
@@ -259,6 +300,8 @@ The tests build small IFC4 models in memory and cover:
 - the dashboard data
 - allowed values and measure limits
 - cross-checks
+- TFM codes by PA 0805, with and without the code lists
+- TFM codes by PA 0802, and the shipped Statsbygg lists
 - finding the rules files
 - Oslobygg: exterior/interior filters, the room number pattern, properties without a value type, and the converted files
 

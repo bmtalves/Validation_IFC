@@ -420,3 +420,78 @@ def test_storeys():
     assert [f["name"] for f in floors] == ["E01", "E02"]
     assert floors[0]["steps"] == sorted([typed_wall.id(), stair.id(), flight.id()])
     assert floors[1]["steps"] == [lone_wall.id()]
+
+
+# ---------- TFM codes (PA 0805) ----------
+
+def test_tfm_problems():
+    problems = Validation_IFC.tfm_problems
+    assert problems("++123456=3600.001.04-RTA001%RTA.001.002") == []
+    assert problems("++123456=2310.001-QQA001%QQA.001.001") == []
+    assert problems("++123456=4330.003.155-UEA001%UEA.001.002") == []
+    assert problems("++123456=2300.001-QQA001%QQA.001.001") == ["system code 2300 is not used by Statsbygg; use 2310, 2320, 2330 or 2340"]
+    assert problems("++123456=3601.001-RTA001%RTA.001.002")[0].startswith("system code 3601 is not used")
+    assert problems("++123456=2310.001.01-QQA001%QQA.001.001") == ["building systems (2xxx) have no sub-number (.01)"]
+    assert problems("++123456=3200.001.06-SMA001%SMA.001.002") == ["sub-number .06 should be .04 (supply) or .05 (return)"]
+    assert problems("++123456=4330.003.55-UEA001%UEA.001.002") == ["sub-number .55 should have 3 digits for 4xxx systems"]
+    assert problems("++12345=2310.001-QA001%QQA.1") == [
+        "location 12345 should be the 6-digit building number",
+        "component -QA001 should be 3 letters and 3 digits, e.g. -RTA001",
+        "type %QQA.1 should be BBB.nnn.nnn, e.g. %RTA.001.002"]
+    assert problems("=3600.001-RTA001")[0].startswith("missing ++location, %type")
+    assert problems("<A>++123456=3600.001-RTA001%RTA.001.002") == ["owner's overall ID <...> is not used by Statsbygg"]
+    # With the code lists from the standards
+    own = Validation_IFC.TfmCodes(ns3451=frozenset({"2310"}), ns3457=frozenset({"QQA"}))
+    assert problems("++123456=2311.001-QQA001%QQB.001.001", own) == [
+        "system code 2311 is not in NS 3451", "type code QQB is not in NS 3457-8"]
+    assert problems("++123456=2310.001–QQA001%QQA.001.001") == ["use - (hyphen), not – (dash)"]
+    assert problems("RTA001")[0].startswith("not a TFM code")
+
+
+def test_tfm_pa0802():
+    problems = Validation_IFC.tfm_problems
+    codes = Validation_IFC.TfmCodes(pa0802_systems={"244": "yes", "310": "yes", "312": "no", "247": "no"},
+                                    pa0802_components=frozenset({"DI", "JV"}))
+    assert problems("+123456=244.001-DI001T", codes) == []
+    assert problems("+123456=244.001-DI001", codes) == []
+    assert problems("+123456=244.001–DI001T", codes) == ["use - (hyphen), not – (dash)"]
+    assert problems("+123456=312.001-DI001", codes) == ["system code 312 is not used in TFM (PA 0802); use 310"]
+    assert problems("+123456=247.001-DI001", codes) == ["system code 247 is not used in TFM (PA 0802)"]
+    assert problems("+123456=999.001-XX001", codes) == [
+        "system code 999 is not in the PA 0802 system list", "component code XX is not in the PA 0802 component list"]
+    assert problems("+1234=244.1-DIX01") == [
+        "location 1234 should be the 6-digit building number",
+        "system =244.1 should be NNN.nnn (3-digit code, 3-digit number)",
+        "component -DIX01 should be 2 letters and 3 digits, with T for a component type, e.g. -DI001 or -DI001T"]
+    assert problems("=244.001-DI001")[0] == "missing +location; expected +AAAAAA=NNN.nnn-BBnnn(T)"
+
+
+def test_tfm_statsbygg_lists_shipped():
+    codes = Validation_IFC.tfm_code_lists(Validation_IFC.TOOL_FOLDER / "no such folder")
+    assert codes.ns3451 is None and codes.ns3457 is None
+    assert codes.pa0805["2310"] == "yes" and codes.pa0805["4700"] == "no"
+    assert codes.pa0802_systems["244"] == "yes" and codes.pa0802_systems["312"] == "no"
+    assert {"DI", "JV"} <= codes.pa0802_components
+    problems = Validation_IFC.tfm_problems
+    assert problems("++123456=4700.001-UEA001%UEA.001.001", codes) == ["system code 4700 is not used by Statsbygg (PA 0702)"]
+    assert problems("+123456=360.001-JV401", codes) == []
+
+
+def test_tfm_check_and_code_files(tmp_path):
+    (tmp_path / "NS 3451 systemkoder.csv").write_text("Kode;Navn\n2310;Bærende ytterveggssystemer\n3600;Luftbehandling\n", encoding="utf-8")
+    (tmp_path / "NS3457-8.csv").write_text("RTA,Ventil\nQQA,Vegg\n", encoding="utf-8")
+    codes = Validation_IFC.load_tfm_codes(tmp_path)
+    assert codes == ({"2310", "3600"}, {"RTA", "QQA"})
+
+    model, typed_wall, lone_wall = make_model()
+    base = Concept("200 Wall", "IfcWall", "NONS_Reference.RefString", None, None,
+                   ("property", "NONS_Reference", "RefString", "IFCLABEL"))
+    extra = Validation_IFC.tfm_concepts([base, base], Validation_IFC.TfmCodes(ns3451=frozenset(codes[0])))
+    assert len(extra) == 1
+    write_property(model, typed_wall, "NONS_Reference", "RefString", "IFCLABEL", "++123456=2310.001-QQA001%QQA.001.001")
+    write_property(model, lone_wall, "NONS_Reference", "RefString", "IFCLABEL", "++123456=2320.001-QQA001%QQA.001.001")
+    results = {r.element.Name: (r.status, r.value) for r in validate(model, extra)}
+    assert results == {
+        "AVA.001": ("passed", "++123456=2310.001-QQA001%QQA.001.001"),
+        "AVA.002": ("failed", "++123456=2320.001-QQA001%QQA.001.001 (system code 2320 is not in NS 3451)"),
+    }

@@ -24,6 +24,12 @@ CLIENT_NAMES = {"statsbygg": "SIMBA 2.1", "oslobygg": "Oslobygg"}
 DASHBOARD_TEMPLATE = TOOL_FOLDER / "dashboard_template.html"
 ALLOWED_VALUES_FILE = TOOL_FOLDER / "allowed_values.csv"
 CROSS_CHECKS_FILE = TOOL_FOLDER / "cross_checks.csv"
+# Your own copies of the NS 3451 system codes and NS 3457-8 component codes (optional, not shared)
+TFM_CODES_FOLDER = TOOL_FOLDER / "TFM codes"
+# Statsbygg's published TFM lists (PA 0802 system/component codes, PA 0702 NS 3451 system codes)
+STATSBYGG_TFM_FOLDER = TOOL_FOLDER / "Statsbygg TFM"
+# The property holding the TFM code in SIMBA 2.1 (NONS10102)
+TFM_PROPERTY = ("NONS_Reference", "RefString")
 # Statsbygg's IDS files are named ..._b3-1-architectural.ids, ..._b3-1_environmental_material.ids
 IDS_FILE_NAME = re.compile(r"_b(\d)-(\d)[-_]([a-z_]+)\.ids$", re.IGNORECASE)
 # Oslobygg's are named oslobygg_2-forprosjekt_ark.ids (the number keeps the phases in order)
@@ -111,6 +117,8 @@ def main():
     allowed = {**rules.allowed, **own_allowed}
     cross_checks = load_cross_checks(CROSS_CHECKS_FILE)
     concepts = rules.concepts + cross_check_concepts(rules.concepts, cross_checks)
+    if client == "statsbygg":
+        concepts += tfm_concepts(rules.concepts, tfm_code_lists())
     # Copying the old DesignedStatus is a SIMBA 2.0 -> 2.1 step
     changed = migrate_designed_status(model) if client == "statsbygg" else False
 
@@ -479,6 +487,287 @@ def cross_check_concepts(concepts, checks):
     return extra
 
 
+# ---------- TFM codes (Statsbygg PA 0805 and PA 0802) ----------
+# Statsbygg has two TFM formats, told apart by the location sign:
+#   ++  PA 0805 Bruk av NS-TFM i Statsbygg (rev. 04, 13.03.2025), "Normal TFM-ID med komponenttype":
+#       ++AAAAAA=NNNN.nnn.nn(n)-BBBnnn%BBB.nnn.nnn
+#   +   PA 0802 Tverrfaglig merkesystem (rev. 3; code lists rev. 5, 17.02.2026), component and component type:
+#       +AAAAAA=NNN.nnn-BBnnn and +AAAAAA=NNN.nnn-BBnnnT
+
+TFM_FORMATS = {"0805": "++AAAAAA=NNNN.nnn-BBBnnn%BBB.nnn.nnn", "0802": "+AAAAAA=NNN.nnn-BBnnn(T)"}
+TFM_PARTS = re.compile(r"^\+\+(?P<location>[^=]*)=(?P<system>[^-%]*)-(?P<component>[^%]*)%(?P<type>.*)$")
+TFM_SYSTEM = re.compile(r"^(\d{4})\.(\d{3})(?:\.(\d+))?$")
+TFM_COMPONENT = re.compile(r"^([A-ZÆØÅ]{3})(\d{3})$")
+TFM_TYPE = re.compile(r"^([A-ZÆØÅ]{3})\.(\d{3})(?:\.(\d{2,3}))?$")  # PA 0805 shows .nn in 2.3.3, .nnn in its examples
+TFM_0802_PARTS = re.compile(r"^\+(?P<location>[^=]*)=(?P<system>[^-]*)-(?P<component>.*)$")
+TFM_0802_SYSTEM = re.compile(r"^(\d{3})\.(\d{3})$")
+TFM_0802_COMPONENT = re.compile(r"^([A-ZÆØÅ]{2})(\d{3})(T?)$")
+# Overall system codes Statsbygg doesn't allow, and what to use instead (PA 0805 2.2.1.1)
+TFM_BANNED_SYSTEMS = {
+    "2300": "2310, 2320, 2330 or 2340", "2400": "a 24x0 code", "2500": "a 25x0 code", "2600": "a 26x0 code",
+    "2700": "a 27x0 code", "3100": "a 31x0 code", "3300": "a 33x0 code", "3400": "a 34x0 code",
+    "3500": "a 35x0 code", "4600": "a 46x0 code", "5210": "5201-5204", "5230": "5201-5204", "5240": "5201-5204",
+    "7600": "a 76x0 code", "7700": "a 77x0 code",
+    **{f"360{i}": "3600 (air handling only uses 3600)" for i in range(1, 8)},
+}
+
+
+@dataclass(frozen=True, eq=False)
+class TfmCodes:
+    """The code lists TFM codes are checked against; None where there is no list"""
+    ns3451: frozenset = None            # your NS 3451 system codes ("TFM codes" folder)
+    ns3457: frozenset = None            # your NS 3457-8 component codes
+    pa0805: dict = None                 # Statsbygg's NS 3451 system codes from PA 0702: {code: "yes"/"no"}
+    pa0802_systems: dict = None         # PA 0802 system codes: {code: "yes"/"no"}
+    pa0802_components: frozenset = None  # PA 0802 component codes
+
+    def names(self):
+        """The lists in use, for messages"""
+        return [name for name, found in (
+            ("NS 3451", self.ns3451), ("NS 3457-8", self.ns3457), ("PA 0702 system codes", self.pa0805),
+            ("PA 0802 system codes", self.pa0802_systems), ("PA 0802 component codes", self.pa0802_components)) if found]
+
+
+def tfm_format(code):
+    """"0805" or "0802": by the location sign, or without one by the system code's digits"""
+    code = code.strip()
+    if code.startswith("++"):
+        return "0805"
+    if code.startswith("+"):
+        return "0802"
+    system = re.search(r"=(\d+)", code)
+    if "%" in code or (system and len(system.group(1)) == 4):
+        return "0805"
+    if system and len(system.group(1)) == 3:
+        return "0802"
+    return None
+
+
+def tfm_problems(code, codes=None):
+    """What is wrong with a Statsbygg TFM code (PA 0805 or PA 0802), as short sentences; [] if nothing"""
+    codes = codes or TfmCodes()
+    code, problems = code.strip(), []
+    if re.search("[–—]", code):
+        problems.append("use - (hyphen), not – (dash)")
+        code = re.sub("[–—]", "-", code)
+    kind = tfm_format(code)
+    if kind == "0805":
+        return problems + pa0805_problems(code, codes)
+    if kind == "0802":
+        return problems + pa0802_problems(code, codes)
+    return problems + [f"not a TFM code; expected {TFM_FORMATS['0805']} (PA 0805) or {TFM_FORMATS['0802']} (PA 0802)"]
+
+
+def tfm_location_problems(location):
+    if re.fullmatch(r"\d{6}", location):
+        return []
+    return [f"location {location or '(empty)'} should be the 6-digit building number"]
+
+
+def pa0805_problems(code, codes):
+    """NS-TFM as Statsbygg uses it (PA 0805)"""
+    for sign, name in (("<", "owner's overall ID <...>"), ("==", "special functional role =="), ("(", "additional information (...)")):
+        if sign in code:
+            return [f"{name} is not used by Statsbygg"]
+    expected = TFM_FORMATS["0805"]
+    parts = TFM_PARTS.match(code)
+    if not parts:
+        missing = [name for sign, name in (("++", "++location"), ("=", "=system"), ("-", "-component"), ("%", "%type"))
+                   if sign not in code]
+        if missing:
+            return [f"missing {', '.join(missing)}; expected {expected}"]
+        return [f"parts in the wrong order; expected {expected}"]
+
+    problems = tfm_location_problems(parts["location"])
+    system = TFM_SYSTEM.match(parts["system"])
+    if not system:
+        problems.append(f"system ={parts['system']} should be NNNN.nnn (4-digit code, 3-digit number)")
+    else:
+        number, sub = system.group(1), system.group(3)
+        if number in TFM_BANNED_SYSTEMS:
+            problems.append(f"system code {number} is not used by Statsbygg; use {TFM_BANNED_SYSTEMS[number]}")
+        elif codes.pa0805 and codes.pa0805.get(number) == "no":
+            problems.append(f"system code {number} is not used by Statsbygg (PA 0702)")
+        elif codes.ns3451 and number not in codes.ns3451:
+            problems.append(f"system code {number} is not in NS 3451")
+        family = number[:2]
+        if sub is not None:
+            if number[0] == "2":
+                problems.append(f"building systems (2xxx) have no sub-number (.{sub})")
+            elif family in ("32", "35", "37") and sub not in ("04", "05"):
+                problems.append(f"sub-number .{sub} should be .04 (supply) or .05 (return)")
+            elif family == "36" and sub not in {f"0{i}" for i in range(1, 9)}:
+                problems.append(f"sub-number .{sub} should be .01-.08 for air handling")
+            elif number[0] in ("4", "5") and len(sub) != 3:
+                problems.append(f"sub-number .{sub} should have 3 digits for {number[0]}xxx systems")
+
+    component = TFM_COMPONENT.match(parts["component"])
+    if not component:
+        problems.append(f"component -{parts['component']} should be 3 letters and 3 digits, e.g. -RTA001")
+    elif codes.ns3457 and component.group(1) not in codes.ns3457:
+        problems.append(f"component code {component.group(1)} is not in NS 3457-8")
+
+    kind = TFM_TYPE.match(parts["type"])
+    if not kind:
+        problems.append(f"type %{parts['type']} should be BBB.nnn.nnn, e.g. %RTA.001.002")
+    elif codes.ns3457 and kind.group(1) not in codes.ns3457 and (not component or kind.group(1) != component.group(1)):
+        problems.append(f"type code {kind.group(1)} is not in NS 3457-8")
+    return problems
+
+
+def pa0802_problems(code, codes):
+    """Statsbygg's own TFM (PA 0802): +building=system.number-component, with T at the end for a type"""
+    expected = TFM_FORMATS["0802"]
+    parts = TFM_0802_PARTS.match(code)
+    if not parts:
+        missing = [name for sign, name in (("+", "+location"), ("=", "=system"), ("-", "-component")) if sign not in code]
+        if missing:
+            return [f"missing {', '.join(missing)}; expected {expected}"]
+        return [f"parts in the wrong order; expected {expected}"]
+
+    problems = tfm_location_problems(parts["location"])
+    system = TFM_0802_SYSTEM.match(parts["system"])
+    if not system:
+        problems.append(f"system ={parts['system']} should be NNN.nnn (3-digit code, 3-digit number)")
+    elif codes.pa0802_systems:
+        number = system.group(1)
+        use = codes.pa0802_systems.get(number)
+        if use is None:
+            problems.append(f"system code {number} is not in the PA 0802 system list")
+        elif use == "no":
+            family = number[:2] + "0"
+            instead = f"; use {family}" if family != number and codes.pa0802_systems.get(family) == "yes" else ""
+            problems.append(f"system code {number} is not used in TFM (PA 0802){instead}")
+
+    component = TFM_0802_COMPONENT.match(parts["component"])
+    if not component:
+        problems.append(f"component -{parts['component']} should be 2 letters and 3 digits, "
+                        "with T for a component type, e.g. -DI001 or -DI001T")
+    elif codes.pa0802_components and component.group(1) not in codes.pa0802_components:
+        problems.append(f"component code {component.group(1)} is not in the PA 0802 component list")
+    return problems
+
+
+def read_code_file(path, pattern):
+    """Codes from an Excel or CSV file: every cell that starts with a code, e.g. "2310 Bærende ..." """
+    texts = []
+    if path.suffix.lower() == ".csv":
+        with open(path, newline="", encoding="utf-8-sig") as file:
+            sample = file.read(4096)
+            file.seek(0)
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t") if sample else csv.excel
+            texts = [cell for row in csv.reader(file, dialect) for cell in row]
+    elif path.suffix.lower() in (".xlsx", ".xlsm"):
+        texts = xlsx_texts(path)
+    alone, leading = set(), set()
+    for text in texts:
+        text = str(text).strip()
+        match = pattern.match(text)
+        if match:
+            (alone if match.group(1) == text else leading).add(match.group(1))
+    # With a column of codes, cells that only start with one are names ("UPS inkl. batteri"), not codes
+    return alone or leading
+
+
+def xlsx_texts(path):
+    """All cell texts in an Excel workbook, without extra libraries"""
+    import zipfile
+    sheet = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    texts = []
+    with zipfile.ZipFile(path) as book:
+        names = book.namelist()
+        strings = []
+        if "xl/sharedStrings.xml" in names:
+            strings = ["".join(t.text or "" for t in si.iter(sheet + "t"))
+                       for si in ET.fromstring(book.read("xl/sharedStrings.xml")).iter(sheet + "si")]
+        for name in names:
+            if name.startswith("xl/worksheets/") and name.endswith(".xml"):
+                for cell in ET.fromstring(book.read(name)).iter(sheet + "c"):
+                    value, inline = cell.find(sheet + "v"), cell.find(sheet + "is")
+                    if value is not None and value.text is not None:
+                        text = strings[int(value.text)] if cell.get("t") == "s" else value.text
+                        texts.append(text[:-2] if text.endswith(".0") else text)  # 2310 stored as a number
+                    elif inline is not None:
+                        texts.append("".join(t.text or "" for t in inline.iter(sheet + "t")))
+    return texts
+
+
+def load_tfm_codes(folder):
+    """(NS 3451 system codes or None, NS 3457-8 component codes or None) from files in `folder` whose
+    names contain 3451 / 3457. Without them only the format is checked."""
+    system_codes, component_codes = set(), set()
+    if folder.is_dir():
+        for path in sorted(folder.iterdir()):
+            if path.suffix.lower() not in (".csv", ".xlsx", ".xlsm"):
+                continue
+            try:
+                if "3451" in path.name:
+                    system_codes |= read_code_file(path, re.compile(r"^(\d{4})(?!\d)"))
+                elif "3457" in path.name:
+                    component_codes |= read_code_file(path, re.compile(r"^([A-ZÆØÅ]{3})(?![A-Za-zÆØÅæøå])"))
+            except (OSError, ValueError, KeyError, csv.Error, ET.ParseError) as error:
+                print(f"Could not read {path.name}: {error}")
+    for name, codes in (("NS 3451 system", system_codes), ("NS 3457-8 component", component_codes)):
+        if codes:
+            print(f"Checking TFM codes against {len(codes)} {name} codes from {folder.name}")
+    return system_codes or None, component_codes or None
+
+
+def read_statsbygg_list(path):
+    """{code: (name, use)} from a CSV made by make_tfm_lists.py; None if the file isn't there"""
+    if not path.is_file():
+        return None
+    try:
+        with open(path, newline="", encoding="utf-8-sig") as file:
+            rows = [row for row in csv.reader(file) if row and row[0] and not row[0].startswith("#")][1:]
+    except (OSError, csv.Error) as error:
+        print(f"Could not read {path.name}: {error}")
+        return None
+    return {row[0]: (row[1] if len(row) > 1 else "", row[2] if len(row) > 2 else "yes") for row in rows}
+
+
+def tfm_code_lists(own_folder=TFM_CODES_FOLDER, statsbygg_folder=STATSBYGG_TFM_FOLDER):
+    """Your NS 3451 / NS 3457-8 lists plus Statsbygg's published PA 0802 and PA 0702 lists"""
+    ns3451, ns3457 = load_tfm_codes(own_folder)
+    pa0805 = read_statsbygg_list(statsbygg_folder / "pa0805_system_codes.csv")
+    systems = read_statsbygg_list(statsbygg_folder / "pa0802_system_codes.csv")
+    components = read_statsbygg_list(statsbygg_folder / "pa0802_component_codes.csv")
+    codes = TfmCodes(
+        ns3451=frozenset(ns3451) if ns3451 else None, ns3457=frozenset(ns3457) if ns3457 else None,
+        pa0805={code: use for code, (_, use) in pa0805.items()} if pa0805 else None,
+        pa0802_systems={code: use for code, (_, use) in systems.items()} if systems else None,
+        pa0802_components=frozenset(components) if components else None)
+    found = [f"{name} ({len(lst)})" for name, lst in (
+        ("PA 0702 system codes", codes.pa0805), ("PA 0802 system codes", codes.pa0802_systems),
+        ("PA 0802 component codes", codes.pa0802_components)) if lst]
+    if found:
+        print(f"Checking TFM codes against Statsbygg's lists: {', '.join(found)}")
+    return codes
+
+
+def tfm_concepts(concepts, codes=None):
+    """A TFM format check for every object group that requires the TFM property"""
+    extra, seen = [], set()
+    for concept in concepts:
+        required = concept.required
+        if not (required and required[0] == "property" and (required[1], required[2]) == TFM_PROPERTY):
+            continue
+        if concept.scope() in seen:
+            continue
+        seen.add(concept.scope())
+        codes = codes or TfmCodes()
+        lists = ", ".join(codes.names())
+        extra.append(Concept(
+            concept.group, concept.entity, f"{TFM_PROPERTY[0]}.{TFM_PROPERTY[1]} TFM format", None, concept.applicability,
+            ("tfm", *TFM_PROPERTY, codes), concept.required_by,
+            entities=concept.entities, predefined=concept.predefined, filters=concept.filters,
+            description="TFM code in one of Statsbygg's formats. PA 0805 (NS-TFM): "
+                        "++building number=system code.number(.sub)-component%type, e.g. ++123456=3600.001.04-RTA001%RTA.001.002. "
+                        "PA 0802: +building number=system code.number-component, with T for a type, e.g. +123456=244.001-DI001T"
+                        + (f". Codes are checked against {lists}." if lists else ".")))
+    return extra
+
+
 # ---------- Checking the model ----------
 
 class Checker:
@@ -543,6 +832,16 @@ class Checker:
             elif part not in whole:
                 problems.append(f"{part_prop} {part} not in it")
         return (not problems, whole + (f" ({'; '.join(problems)})" if problems else ""))
+
+    def check_tfm(self, concept, element):
+        """TFM format: (passed, value with what is wrong), or None when the object has no TFM code
+        (the property's own requirement already reports that)"""
+        _, pset, prop, codes = concept.required
+        code = self.property_text(element, pset, prop)
+        if code is None:
+            return None
+        problems = tfm_problems(code, codes)
+        return (not problems, code + (f" ({'; '.join(problems)})" if problems else ""))
 
     def evaluate(self, node, element):
         kind, children = node
@@ -788,7 +1087,11 @@ def validate(model, concepts, allowed=None):
     results = []
     for concept in concepts:
         for element in checker.applicable_elements(concept):
-            if concept.contains:
+            if concept.required and concept.required[0] == "tfm":
+                outcome = checker.check_tfm(concept, element)
+                if outcome is not None:
+                    results.append(Result(concept, element, *outcome))
+            elif concept.contains:
                 outcome = checker.check_contains(concept, element)
                 if outcome is not None:
                     results.append(Result(concept, element, *outcome))
@@ -898,7 +1201,7 @@ def dashboard_data(results, model, model_path, phase, allowed=None, client="stat
     for result in results:
         concept, element = result.concept, result.element
         required = concept.required
-        is_property = required is not None and required[0] in ("property", "cross")
+        is_property = required is not None and required[0] in ("property", "cross", "tfm")
         requirement = requirements.setdefault(concept, {
             "group": concept.group,
             "label": concept.label,

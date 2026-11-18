@@ -1,0 +1,216 @@
+Code,Name,Use in TFM
+# From PA-0702-Vedlegg-1-2-Dokumentasjonskrav-iht-PA-0805-NS-TFM-rev5.pdf (Statsbygg). Made by make_tfm_lists.py,,
+2000,Bygning generelt,yes
+2120,Byggegropsystemer,yes
+2130,Grunnforsterkningssystemer,yes
+2140,Støttekonstruksjonssystemer,yes
+2150,Pelefundamenteringssystemer,yes
+2160,Direkte fundamenteringssystemer,yes
+2170,Dreneringssystemer,yes
+2210,Rammesystemer,yes
+2220,Søylesystemer,yes
+2230,Bjelkesystemer,yes
+2300,Ytterveggsystemer,no
+2310,Bærende ytterveggsystemer,yes
+2320,Ikke-bærende ytterveggsystemer,yes
+2330,Glassfasadesystemer,yes
+2340,"Vinduer, dører, portsystemer",yes
+2350,Systemer for utvendig kledning og,yes
+2360,Systemer for innvendig overflate,yes
+2370,Solavskjermingssystemer,yes
+2400,Innerveggsystemer,no
+2410,Bærende innerveggsystemer,yes
+2420,Ikke-bærende Innerveggsystemer,yes
+2430,"Systemer for systemvegger, glassfelt",yes
+2440,"Vinduer, dører, foldeveggsystemer",yes
+2460,Klednings- og overflatesystemer,yes
+2500,Dekksystemer,no
+2510,Frittbærende dekksystemer,yes
+2520,Systemer for gulv på grunn,yes
+2530,"Systemer for oppfôret gulv, påstøp",yes
+2540,Systemer for systemgulv,yes
+2550,Gulvoverflatesystemer,yes
+2560,Systemer for faste himlinger og,yes
+2570,Systemer for systemhimlinger,yes
+2600,Yttertaksystemer,no
+2610,System for primærkonstruksjoner for,yes
+2620,Taktekningssystemer,yes
+2630,"Systemer for glasstak, overlys,",yes
+2640,Takoppbyggssystemer,yes
+2670,Prefabrikkerte takelementsystemer,yes
+2700,Systemer for fast innventar,no
+2710,Systemer for murte piper og ildsteder,yes
+2730,Systemer for kjøkkeninnredning,yes
+2740,Systemer for innredning og garnityr for,yes
+2750,Systemer for skap og reoler,yes
+2760,"Systemer for sittebenker, stolrader,",yes
+2770,Systemer for skilt og tavler,yes
+2810,Systemer for innvendige trapper,yes
+2820,Systemer for utvendige trapper,yes
+2830,Systemer for ramper,yes
+2840,Systemer for balkonger og verandaer,yes
+2850,Systemer for tribuner og amfier,yes
+2860,Systemer for baldakiner og skjermtak,yes
+2870,"Systemer for andre rekkverk, håndlister",yes
+2910,"Systemer for hull, tettinger",yes
+3000,"VVS-systemer, generelt",yes
+3100,Sanitærsystemer,no
+3101,Spillvannsystemer,yes
+3102,Overvannssystemer,yes
+3103,Forbruksvannssystemer,yes
+3200,Varmesystemer,yes
+3300,Brannslokkingssystemer,no
+3310,Systemer for installasjon for manuell,yes
+3320,Systemer for installasjon for,yes
+3330,Systemer for installasjon for,yes
+3340,Systemer for installasjon for,yes
+3350,Systemer for installasjon for,yes
+3360,Systemer for installasjon for,yes
+3370,Systemer for installasjon for,yes
+3400,Gass og trykkluftssystemer,no
+3410,Systemer for gass for bygningsdrift,yes
+3420,Systemer for gass for virksomhet,yes
+3430,Systemer for medisinske gasser,yes
+3450,Systemer for trykkluft for virksomhet,yes
+3460,Systemer for medisinsk trykkluft,yes
+3470,Vakuumsystemer,yes
+3480,Systemer for spesialavtrekk for gasser,yes
+3500,Systemer for varmepumpe og,no
+3510,Kjøleromssystemer,yes
+3520,Fryseromssystemer,yes
+3530,Kjølesystemer for virksomhet,yes
+3540,Kprjoødleu-kosgjovnarmesystemer for industri og,yes
+3550,Kuldesystemer for innendørs,yes
+3560,Systemer for oppvarming og,yes
+3600,Luftbehandlingssystemer,yes
+3601,Balansert ventilasjonssystemer,no
+3602,Avtrekksventilasjonssystemer,no
+3603,Naturlig,no
+3604,Røyk- og brannventilasjonssystemer,no
+3605,Krigsventilasjonsystemer,no
+3606,Spesialventilasjonssystemer,no
+3607,Systemer for inert ventilasjon,no
+3700,Komfortkjølingssystemer,yes
+3810,Systemer for rensing av vann,yes
+3820,Systemer for rensing av avløpsvann,yes
+3830,Systemer for vannrensing,yes
+3860,Systemer for innendørs fontener,yes
+4000,"Elkraft, generelt",yes
+4110,Systemer for kabelføring,yes
+4120,Systemer for jording,yes
+4130,Systemer for lynvern,yes
+4220,Systemer for nettstasjoner,yes
+4310,Systemer for elkraftinntak,yes
+4320,Systemer for hovedfordeling,yes
+4330,Systemer for elkraftfordeling til,yes
+4340,Systemer for elkraftfordeling til,yes
+4350,Systemer for elkraftfordeling til,yes
+4360,Systemer for elkraftfordeling til,yes
+4420,Belysningssystemer,yes
+4430,Nødlyssystemer,yes
+4500,Elvarmesystemer,yes
+4600,Reservekraftsystemer,no
+4610,Elkraftaggregatsystemer,yes
+4620,Avbruddsfri kraftforsyningssystemer,yes
+4630,Systemer for akkumulatoranlegg,yes
+4700,Systemer for lokal elkraftproduksjon,no
+4710,Solcellesystemer,yes
+4720,Vindmøllesystemer,yes
+4800,Elektriske beskyttelsessystemer,no
+4810,Elektriske,yes
+4820,Elektriske beskyttelse mot uønskede,yes
+5000,"Ekom og automatisering, generelt",yes
+5110,Systemer for kabelføring for ekom,yes
+5120,Systemer for jording for ekom,yes
+5140,Systemer for inntak ekom,yes
+5200,Integrert kommunikasjonssystemer,yes
+5201,Systemer for integrert kommunikasjon,yes
+5202,Systemer for integrert kommunikasjon,yes
+5203,Systemer for integrert kommunikasjon,yes
+5204,Systemer for integrert kommunikasjon,yes
+5210,Systemer for kabling for integrert,no
+5230,Systemer for sentralutstyr for,no
+5240,Systemer for terminalutstyr for,no
+5320,Systemer for telefoni,yes
+5330,"Systemer for nødkommunikasjon,",yes
+5340,Systemer for porttelefoner,yes
+5350,Systemer for høyttalende hustelefoner,yes
+5360,Systemer for personsøkning,yes
+5420,Brannalarmsystemer,yes
+5430,"Systemer for adgangskontroll,",yes
+5440,Pasientsignalsystemer,yes
+5450,Systemer for uranlegg og,yes
+5460,Alarmsystem knyttet til bygning eller,yes
+5520,Fellesantennesystemer,yes
+5530,Systemer for internfjernsyn,yes
+5540,Systemer for lyddistribusjonsanlegg,yes
+5550,Lydsystemer,yes
+5560,Bilde og AV-systemer,yes
+5620,Sentral driftskontroll og automatisering,yes
+5630,Lokale automatiseringssystemer,yes
+5640,Buss-systemer,yes
+5700,Systemer for instrumentering for,yes
+6000,"Andre installasjoner, generelt",yes
+6110,Prefabrikkerte kjøleromsystemer,yes
+6120,Prefabrikkerte fryseromsystemer,yes
+6130,Prefabrikkerte baderomsystemer,yes
+6140,Prefabrikkerte skjermromsystemer,yes
+6150,Systemer for prefabrikerte moduler for,yes
+6210,Heissystemer,yes
+6220,Rulletrappsystemer,yes
+6230,Rullebåndsystemer,yes
+6240,Løftebordsystemer,yes
+6250,Trappeheissystemer,yes
+6260,Kransystemer,yes
+6270,Fasade- og takvasksystemer,yes
+6310,Systemer for dokument- og,yes
+6320,Systemer for transportanlegg for tørr og,yes
+6330,"Systemer for ledningsnett for drivstoff,",yes
+6340,Systemer for selvgående transportører,yes
+6410,Kogenereringssystemer - CHP,yes
+6420,Solfangersystemer,yes
+6510,Systemer for utstyr for oppsamling,yes
+6520,Sentralstøvsugersystemer,yes
+6530,Pneumatisk søppeltransportsystemer,yes
+6600,Systemer for fastmontert,yes
+6700,Systemer for løs spesialutrustning,yes
+6800,"Systemer for løst innventar, kunst,",yes
+7000,"Utendørs, generelt",yes
+7110,Systemer for grovplanert terreng,yes
+7120,Utendørs dreneringssystemer,yes
+7130,Utendørs systemer for forsterket grunn,yes
+7140,Systemer for grøfter og groper for,yes
+7150,Systemer for bergrom,yes
+7210,Systemer for støttemurer og andre,yes
+7220,"Systemer for trapper, ramper,",yes
+7230,"Systemer for frittstående skjermtak,",yes
+7240,Systemer for svømmebassenger m.m.,yes
+7250,"Systemer for gjerder, porter og",yes
+7260,Systemer for kanaler og kulverter for,yes
+7270,Systemer for kummer og tanker for,yes
+7310,Utendørs VA-systemer,yes
+7320,Utendørs varmesystemer,yes
+7330,Utendørs brannslokkingssystemer,yes
+7340,Utendørs gassystemer,yes
+7350,Systemer for utendørs kjøling for,yes
+7360,Systemer for utendørs,yes
+7370,Systemer for utendørs,yes
+7380,Systemer for utendørs fontener og,yes
+7430,Systemer for utendørs lavspent,yes
+7440,Systemer for utendørs lys,yes
+7450,Systemer for utendørs elvarme,yes
+7500,Utendørs ekom og automatisering,yes
+7600,Systemer for veier og plasser,no
+7610,Systemer for veier,yes
+7620,Systemer for plasser,yes
+7630,Systemer for skilter,yes
+7640,"Systemer for sikkerhetsrekkverk,",yes
+7700,Systemer for parker og grøntanlegg,no
+7710,Systemer for gressarealer,yes
+7720,Systemer for beplantning,yes
+7730,Systemer for utstyr utendørs,yes
+7740,Systemer for utendørs plasser for idrett,yes
+7750,Systemer for utendørs tribuner og,yes
+7830,Systemer for tilknytning til eksterne nett,yes
+7840,Systemer for tilknytning til eksternt,yes
+7850,Systemer for tilknytning til eksternt,yes

@@ -1,0 +1,415 @@
+Code,Name,Use in TFM
+# From PA-0802-Vedlegg-9.1-Systemkodeliste-rev-5-1.pdf (Statsbygg). Made by make_tfm_lists.py,,
+211,Klargjøring av tomt,yes
+212,Byggegrop,yes
+213,Grunnforsterkning,yes
+214,Støttekonstruksjoner,yes
+215,Pelefundamentering,yes
+216,Direkte fundamentering,yes
+217,Drenering,yes
+218,Utstyr og komplettering,no
+219,Andre deler av grunn og fundamenter,yes
+221,Rammer,yes
+222,Søyler,yes
+223,Bjelker,yes
+224,Avstivende konstruksjoner,yes
+225,Brannbeskyttelse av bærende,yes
+226,Kledning og overflate,yes
+227,,no
+228,Utstyr og komplettering for bærende konstruksjoner,no
+229,Andre deler av bærende konstruksjoner,yes
+231,Bærende yttervegger,yes
+232,Ikke-bærende yttervegger,yes
+233,Glassfasader,yes
+234,"Vinduer, dører, porter",yes
+235,Utvendig kledning og overflate.,yes
+236,Innvendig overflate,yes
+237,Solavskjerming,yes
+238,Utstyr og komplettering,no
+239,Andre deler av yttervegger,yes
+241,Bærende innervegger,yes
+242,Ikke-bærende innervegger,yes
+243,Systemvegger og glassfelt,yes
+244,"Vinduer, dører, foldevegger",yes
+245,Skjørt,yes
+246,Kledning og overflate,yes
+247,,no
+248,Utstyr og komplettering,no
+249,Andre deler av innervegger,yes
+251,Frittbærende dekker,yes
+252,"Gulv på grunn, bunnplate",yes
+253,Oppfôret gulv og påstøp,yes
+254,Systemgulv,yes
+255,Gulvoverflate,yes
+256,Faste himlinger og overflatebehandling,yes
+257,Systemhimlinger,yes
+258,Utstyr og komplettering,no
+259,Andre deler av dekker,yes
+261,Primærkonstruksjon for yttertak,yes
+262,Taktekning,yes
+263,"Glasstak, overlys, takluker, røykluker",yes
+264,Takoppbygg,yes
+265,"Gesimser, takrenner og nedløp",yes
+266,Himling og innvendig overflate,yes
+267,Prefabrikerte takelementer,yes
+268,Utstyr og komplettering,no
+269,Andre deler av yttertak,yes
+271,Murte piper og ildsteder,yes
+272,Monteringsferdige ildsteder,yes
+273,Kjøkkeninnredning,yes
+274,Innredning og garnityr,yes
+275,Skap og reoler,yes
+276,"Sittebenker, stolrader,",yes
+277,Skilt og tavler,yes
+278,Utstyr og komplettering,no
+279,Annet fast inventar,yes
+281,Innvendige trapper,yes
+282,Utvendige trapper,yes
+283,Ramper,yes
+284,Balkonger og verandaer,yes
+285,tribuner og amfier,yes
+286,baldakiner og skjermtak,yes
+287,"Andre rekkverk, håndlister og fendere",yes
+288,"Utstyr og kompletteringer for trapper, balkonger",no
+289,"Andre trapper, balkonger m.m.",yes
+290,Andre bygningsmessige deler,yes
+291,"Hull, tettinger",yes
+310,Sanitæranlegg,yes
+311,Bunnledninger for sanitærinstallasjoner,yes
+312,Ledningsnett for sanitærinstallasjon,no
+313,,no
+314,Armaturer for sanitærinstallasjon,no
+315,Utstyr for sanitærinstallasjon,no
+316,Isolasjon av sanitærinstallasjon,no
+317,,no
+318,,no
+319,Andre deler av sanitærinstallasjoner,no
+320,Varmeanlegg,yes
+321,Bunnledninger for varmeinstallasjon,no
+322,Ledningsnett for varmeinstallasjon,no
+323,,no
+324,Armaturer for varmeinstallasjon,no
+325,Utstyr for varmeinstallasjon,no
+326,Isolasjon av varmeinstallasjon,no
+327,,no
+328,,no
+329,Annen varmeinstallasjon,no
+331,Installasjon for manuell brannslokking med vann,yes
+332,Installasjon for brannslokking med sprinkler,yes
+333,Installasjon for brannslokking med vanntåke,yes
+334,Installasjon for,yes
+335,Installasjon for brannslokkig med gass,yes
+336,Installasjon for brannslokking med skum,yes
+337,Brannslokking med håndslukker,yes
+338,,no
+339,Andre deler av installasjoner for brannslokking,yes
+341,Installasjon for gass til bygningsdrift,yes
+342,Installasjon for gass til virksomhet,yes
+343,Installasjon for medisinske gasser,yes
+344,,no
+345,Installasjon for trykkluft til virksomhet,yes
+346,Installasjon for medisinsk,yes
+347,Installasjon for vakuumanlegg,yes
+348,Spesialavtrekk for gasser,yes
+349,Andre installasjoner til,yes
+351,Installasjoner,yes
+352,Installasjoner,yes
+353,Installasjoner,yes
+354,Installasjoner,yes
+355,Installasjoner,yes
+356,Installasjoner,yes
+357,,no
+358,,no
+359,Andre deler for varmepumpe- og kuldeinstallasjoner,yes
+360,Luftbehandling,yes
+361,Kanalnett i grunnen for luftbehandling,no
+362,Kanalnett for luftbehandling,no
+363,,no
+364,Utstyr for luftfordeling,no
+365,Utstyr for luftbehandling,no
+366,Isolasjon av installasjon for luftbehandling,no
+367,,no
+368,,no
+369,Annet utstyr for luftbehandling,no
+370,Komfortkjøleanlegg,yes
+371,Ledningsnett i grunnen for komfortkjøling,no
+372,Ledningsnett for komfortkjøling,no
+373,,no
+374,Armatur for komfortkjøling,no
+375,Utstyr for komfortkjøling,no
+376,Isolasjon av installasjon for komfortkjøling,no
+377,,no
+378,,no
+379,Annen komfortkjøling,no
+381,Installasjon for rensing av vann,yes
+382,Installasjon for rensing av avløpsvann,yes
+383,Installasjon for vannrensing til svømmebasseng,yes
+384,,no
+385,,no
+386,Innendørs fontener og springvann,yes
+387,,no
+388,,no
+389,Annen vannbehandling,yes
+390,Andre VVS-installasjoner,yes
+411,Kabelføring for elkraftinstallasjoner,yes
+412,Jording for elkraftinstallasjoner,yes
+413,Lynvern,yes
+414,Systemer for elkraftuttak,no
+415,,no
+416,,no
+417,,no
+418,,no
+419,Andre basisinstallasjoner for elkraft,yes
+421,Installasjoner for høyspent fordeling,yes
+422,Nettstasjoner,yes
+423,,no
+424,,no
+425,,no
+426,,no
+427,,no
+428,,no
+429,Andre deler for høyspent forsyning,yes
+431,Installasjoner for elkraftinntak,yes
+432,Installasjoner for hovedfordeling,yes
+433,Elkraftfordeling til alminnelig forbruk,yes
+434,Elkraftfordeling til driftstekniske installasjoner,yes
+435,Elkraftfordeling til virksomhet,yes
+436,Elkraftfordeling til lading,yes
+437,,no
+438,,no
+439,Andre deler for lavspent forsyning,yes
+441,,no
+442,Belysning,yes
+443,Nødlys,yes
+444,,no
+445,,no
+446,,no
+447,,no
+448,,no
+449,Andre deler for installasjoner til lys,yes
+450,Elvarme,yes
+451,,no
+452,Varmeovner,no
+453,Varmeelementer for innebygging,no
+454,Vannvarmere og elektrokjeler,no
+455,,no
+456,,no
+457,,no
+458,,no
+459,Annen elvarme,no
+461,Elkraftaggregater,yes
+462,Avbruddsfri kraftforsyning,yes
+463,Akkumulatoranlegg,yes
+464,,no
+465,,no
+466,,no
+467,,no
+468,,no
+469,Andre deler for reservekraftforsyning,yes
+471,Solceller,yes
+472,Vindmøller,yes
+473,,no
+474,,no
+475,,no
+476,,no
+477,,no
+478,,no
+479,Andre deler for lokal elkraftproduksjon,yes
+481,Elektrisk korrosjonsbeskyttelse,yes
+482,Elektrisk sikkerhet for forebygging mot uønskede,yes
+483,,no
+484,,no
+485,,no
+486,,no
+487,,no
+488,,no
+489,Andre deler for installasjon for elektrisk beskyttelse,yes
+490,Andre elkraftinstallasjoner,yes
+511,Kabelføring,yes
+512,Jording,yes
+513,,no
+514,Inntak for ekom og automatisering,yes
+515,Fordelinger for ekom og automatisering,yes
+516,,no
+517,,no
+518,,no
+519,Andre basisinstallasjoner for ekom og automatisering,yes
+520,Integrert kommunikasjon,yes
+521,Kabling for IKT,no
+522,Nettutstyr,no
+523,Sentralutstyr,no
+524,Terminalutstyr,no
+525,,no
+526,,no
+527,,no
+528,,no
+529,Spredenett for eiendomsdrift,yes
+531,,no
+532,Telefoni,yes
+533,Nødkommunikasjon,yes
+534,Porttelefoner,yes
+535,Høyttalende hustelefoner,yes
+536,Personsøkning,yes
+537,,no
+538,,no
+539,Andre deler for telefoni og,yes
+541,,no
+542,Brannalarm,yes
+543,"Adgangskontroll, innbrudds- og overfallsalarm",yes
+544,Pasientsignal,yes
+545,Uranlegg og tidsregistrering,yes
+546,Alarm knyttet til bygning eller installasjon,yes
+547,,no
+548,,no
+549,Andre deler for alarm og signal,yes
+551,,no
+552,Fellesantenne,yes
+553,Internfjernsyn,yes
+554,Lyddistribusjonsanlegg,yes
+555,Lydanlegg,yes
+556,Bilde og AV,yes
+557,,no
+558,,no
+559,Andre delere for lyd og bilde,yes
+561,,no
+562,Sentral driftskontroll og automatisering,yes
+563,Lokal automatisering,yes
+564,Installasjoner for buss-systemer,yes
+565,Installasjoner for FDVUS: Administrative systemer,no
+566,,no
+567,,no
+568,,no
+569,Andre deler for automatisering,yes
+570,Instrumentering,yes
+571,Kabling for instrumentering,no
+572,Instrumentering for måling av mengde,no
+573,Instrumentering for måling av trykk,no
+574,Instrumentering for måling av temperatur,no
+575,Instrumentering for måling av lengde,no
+576,Instrumentering for måling av vekt,no
+577,Instrumentering for måling av elektriske størrelser,no
+578,Instrumentering for analyse,no
+579,Annen instrumentering,no
+590,Andre installasjoner for,yes
+611,Prefabrikerte kjølerom,yes
+612,Prefabrikerte fryserom,yes
+613,Prefabrikerte baderom,yes
+614,Prefabrikerte skjermrom,yes
+615,Prefabrikkerte moduler for,yes
+616,,no
+617,,no
+618,,no
+619,Andre prefabrikerte rom,yes
+621,Heiser,yes
+622,Rulletrapper,yes
+623,Rullebånd,yes
+624,Løftebord,yes
+625,Trappeheiser,yes
+626,Kraner,yes
+627,Fasade- og takvask,yes
+628,,no
+629,Annen person- og varetransport,yes
+631,Dokument og småvaretransportører,yes
+632,Transportanlegg for tørr og løs masse,yes
+633,"Transportanlegg for drivstoff, olje og kjemikalier",yes
+634,Selvgående transportører,yes
+635,,no
+636,,no
+637,,no
+638,,no
+639,Andre transportanlegg,yes
+641,Kogenerering – CHP,yes
+642,Solfanger,yes
+643,,no
+644,,no
+645,,no
+646,,no
+647,,no
+648,,no
+649,Annen lokal varmeproduksjon,yes
+651,Utstyr for oppsamling og behandling av avfall,yes
+652,Sentralstøvsuger,yes
+653,Pneumatisk søppeltransport,yes
+654,,no
+655,,no
+656,,no
+657,,no
+658,,no
+659,Andre installasjoner for avfall og støvsugning,yes
+660,Utstyr for fastmontert spesialutrustning for virksomhet,yes
+670,Utstyr for løs spesialutrustning,yes
+680,Deler til inventar,yes
+690,Andre tekniske,yes
+711,Grovplanert terreng,yes
+712,Drenering,yes
+713,Forsterket grunn,yes
+714,Grøfter og groper for tekniske installasjoner,yes
+715,Bergrom,yes
+716,,no
+717,,no
+718,,no
+719,Annen terrengbearbeiding,yes
+721,Utendørs støttemurer og andre murer,yes
+722,"Utendørs trapper, ramper, terrasser, platting i terreng",yes
+723,"Utendørs skjermtak, leskur m.m. som henger sammen",yes
+724,Utendørs svømmebassenger m.m.,yes
+725,"Utendørs gjerder, porter og bommer",yes
+726,Utendørs kanaler og kulverter for tekniske installasjoner,yes
+727,Utendørs kummer og tanker for tekniske installasjoner,yes
+728,,no
+729,Andre utendørs konstruksjoner,yes
+731,Utendørs VA,yes
+732,Utendørs varme,yes
+733,Utendørs brannslokking,yes
+734,Utendørs gassinstallasjon,yes
+735,Utendørs kjøling for idrettsbaner,yes
+736,Utendørs luftbehandlingsanlegg,yes
+737,Utendørs forsyningsanlegg for termisk,yes
+738,Utendørs fontener og springvann,yes
+739,Andre utendørs røranlegg,yes
+741,,no
+742,Utendørs,yes
+743,Utendørs,yes
+744,Utendørs,yes
+745,Utendørs,yes
+746,Utendørs,yes
+747,,no
+748,,no
+749,Andre installasjoner for utendørs,yes
+751,,no
+752,Utendørs integrert kommunikasjon,yes
+753,Utendørs telefoni og personsøkning,yes
+754,Utendørs alarm og signal,yes
+755,Utendørs lyd og bilde,yes
+756,Utendørs automatisering,yes
+757,,no
+758,,no
+759,Andre installasjoner for,yes
+761,Veier,yes
+762,Plasser,yes
+763,Utendørs skilter,yes
+764,"Utendørs sikkerhetsrekkverk, avvisere,",yes
+765,,no
+766,,no
+767,,no
+768,,no
+769,Andre deler for veier og plasser,yes
+771,Utendørs gressarealer,yes
+772,Utendørs beplantning,yes
+773,Utendørs utstyr,yes
+774,Utendørs plasser for idrett og kultur,yes
+775,Utendørs tribuner og amfier,yes
+776,,no
+777,,no
+778,,no
+779,Andre deler for park og grøntanlegg,yes
+781,,no
+782,,no
+783,"Utendørs tilknytning til eksterne nett for vannforsyning,",yes
+784,Utendørs tilknytning til eksternt elkraftnet,yes
+785,Utendørs tilknytning til eksternt telenett,yes
+786,,no
+787,,no
+788,,no
+789,Andre deler for utendørs infrastruktur,yes
+790,Andre utendørs anlegg,yes
