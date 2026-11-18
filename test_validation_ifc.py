@@ -513,6 +513,54 @@ def test_tfm_pa0802():
     assert problems("=244.001-DI001")[0] == "missing +location; expected +AAAAAA=NNN.nnn-BBnnn(T)"
 
 
+def test_tfm_simba_13():
+    problems = lambda code, codes=None: Validation_IFC.ns3457_7_problems(code, codes)[0]
+    assert problems("<SE09>++ AUE = 3600 . 014 . 04 - SQZ 0023 % SQZ . 008 . 03") == []
+    assert problems("++SE09 = 360 . 014 . 04 - SQZ 0023 % SQZ . 008 . 03") == []
+    assert problems("++B01=2340.004.03-DUZ0013%DUZ.001") == []
+    assert problems("<SE09>++AUE=3600.014-SQZ0023%SQZ.008==SQZ0001(++A101)") == []
+    assert Validation_IFC.ns3457_7_problems("<SE09>++ AUE = 3600 . 014 . 04 - SQZ 0023 % SQZ . 008 . 03")[1] == {
+        "RefComplex": "SE09", "RefPriSysLoc": "AUE", "RefSysClass": "3600", "RefSysNo": "014", "RefSysSubNo": "04",
+        "RefCompClass": "SQZ", "RefCompNo": "0023", "RefCompClassNo1": "008", "RefCompClassNo2": "03"}
+    assert problems("++SE09=36.1-SQ23%SQY.8") == [
+        "system =36.1 should be NNNN.nnn or NNNN.nnn.nn, e.g. =3600.014.04",
+        "component -SQ23 should be 3 letters and a number, e.g. -SQZ0023",
+        "type %SQY.8 should be BBB.nnn or BBB.nnn.nn, e.g. %SQZ.008.03"]
+    assert problems("++SE09=3600.014-SQZ0023%SQY.008") == ["type code SQY differs from component code SQZ"]
+    assert problems("++SE09=3600.014–SQZ0023%SQZ.008") == ["use - (hyphen), not – (dash)"]
+    assert problems("++SE09=3600.014-SQZ0023")[0].startswith("missing %type")
+    own = Validation_IFC.TfmCodes(ns3451=frozenset({"3600"}), ns3457=frozenset({"SQZ"}))
+    assert problems("++SE09=3700.014-QQZ0023%QQZ.008", own) == [
+        "system code 3700 is not in NS 3451", "component code QQZ is not in NS 3457-8"]
+
+    # The NOSSB_Reference parts
+    model, typed_wall, lone_wall = make_model()
+    base = Concept("200 Wall", "IfcWall", "NOSSB_Reference.RefString", None, None,
+                   ("property", "NOSSB_Reference", "RefString", "IFCLABEL"))
+    extra = Validation_IFC.tfm_concepts([base], prop=("NOSSB_Reference", "RefString"), style="ns3457-7")
+    assert [c.label for c in extra] == ["NOSSB_Reference.RefString TFM format", "NOSSB_Reference parts match RefString"]
+    code = "<SE09>++AUE=3600.014.04-SQZ0023%SQZ.008"
+    for wall in (typed_wall, lone_wall):
+        write_property(model, wall, "NOSSB_Reference", "RefString", "IFCLABEL", code)
+        for name, value in (("RefComplex", "SE09"), ("RefPriSysLoc", "AUE"), ("RefSysNo", "014"),
+                            ("RefSysSubNo", "04"), ("RefCompNo", "0023")):
+            write_property(model, wall, "NOSSB_Reference", name, "IFCLABEL", value)
+    write_property(model, typed_wall, "NOSSB_Reference", "RefSysClass", "IFCLABEL", "3600")
+    write_property(model, typed_wall, "NOSSB_Reference", "RefCompClass", "IFCLABEL", "SQZ")
+    write_property(model, typed_wall, "NOSSB_Reference", "RefCompClassNo1", "IFCINTEGER", 8)
+    same = Validation_IFC.same_part
+    assert same("265", "2650", True) and same("2650", "265", True) and same("3600", "3600", True)
+    assert not same("265", "2651", True) and not same("265", "2650") and same("14", "014")
+    write_property(model, lone_wall, "NOSSB_Reference", "RefSysClass", "IFCLABEL", "255")
+    write_property(model, lone_wall, "NOSSB_Reference", "RefCompClassNo2", "IFCLABEL", "03")
+    results = {r.element.Name: (r.status, r.value) for r in validate(model, extra[1:])}
+    assert results == {
+        "AVA.001": ("passed", code),
+        "AVA.002": ("failed", code + " (RefSysClass 255, the code has 3600; no RefCompClass; "
+                                     "RefCompClassNo2 03, the code has none)"),
+    }
+
+
 def test_tfm_statsbygg_lists_shipped():
     codes = Validation_IFC.tfm_code_lists(Validation_IFC.TOOL_FOLDER / "no such folder")
     assert codes.ns3451 is None and codes.ns3457 is None

@@ -142,6 +142,25 @@ For Statsbygg rules, every object group that requires `RefString` gets an extra 
 
 **PA 0802** (`+AAAAAA=NNN.nnn-BBnnn(T)`): the 6-digit building number, a 3-digit system code with a 3-digit number, and a 2-letter component code with a 3-digit number, plus `T` for a component type. The system code must be in the PA 0802 system list and marked for use in TFM. A code marked *Skal ikke benyttes i TFM* fails, with the group code when that one is used, e.g. `+123456=315.001-SQ001 (system code 315 is not used in TFM (PA 0802); use 310)`. The component code must be in the PA 0802 component list.
 
+**SIMBA 1.3** (`NOSSB_Reference`): the code is checked as NS 3457-7, the format in the project's BIM manual (13.1 B-1 *Tverrfaglig merkesystem NS3457-TFM*), not PA 0805/PA 0802. Spaces around the signs are allowed.
+
+```
+<owner>++location=NNNN.nnn(.nn)-BBBnnnn%BBB.nnn(.nn)
+<SE09>++AUE=3600.014.04-SQZ0023%SQZ.008.03      owner ID SE09, location code AUE
+++SE09 = 360 . 014 . 04 - SQZ 0023 % SQZ . 008 . 03
+```
+
+| Part | Checked |
+|---|---|
+| `<…>` owner's overall ID | optional; not empty |
+| `++…` location | letters, digits or dots |
+| `=NNNN.nnn(.nn)` system | 3- or 4-digit system code, 3-digit number, optional 2- or 3-digit sub-number. 4-digit codes must be in your NS 3451 list, if you have one |
+| `-BBBnnnn` component | 3 letters and a 3- or 4-digit number. The code must be in your NS 3457-8 list, if you have one |
+| `%BBB.nnn(.nn)` type | the same component code, a 3-digit number and an optional sub-number |
+| `==…`, `(…)` | allowed (special role, extra information) |
+
+A second requirement, `NOSSB_Reference parts match RefString`, checks the part properties of BIM manual Tabell 15/16 on the object or its type. Each must be there and equal the part of the code: `RefComplex` (owner ID, or the location without one), `RefPriSysLoc` (the location, compared only when the code has an owner ID), `RefSysClass`, `RefSysNo`, `RefSysSubNo`, `RefCompClass`, `RefCompNo`, `RefCompClassNo1`, `RefCompClassNo2`. RefComplex, RefPriSysLoc, RefSysClass, RefCompClassNo1 and the two sub-numbers are optional, but must match the code when they are there. Numbers match without leading zeros, so `14` equals `014`, and a 3-digit RefSysClass equals the 4-digit system code that adds a 0, so `265` equals `2650` (but not `2651`). A failing value lists the differences, e.g. `++B=2650.005.002-KQF0009%KQF.005 (no RefComplex; no RefPriSysLoc; RefSysClass 255, the code has 2650)`.
+
 **Statsbygg's lists.** The `Statsbygg TFM` folder holds code lists taken from Statsbygg's public documents:
 
 | File | From | Used for |
@@ -322,6 +341,7 @@ The tests build small IFC4 models in memory and cover:
 - cross-checks
 - TFM codes by PA 0805, with and without the code lists
 - TFM codes by PA 0802, and the shipped Statsbygg lists
+- TFM codes for SIMBA 1.3 (NS 3457-7) and the NOSSB_Reference parts
 - finding the rules files
 - Oslobygg: exterior/interior filters, the room number pattern, properties without a value type, and the converted files
 

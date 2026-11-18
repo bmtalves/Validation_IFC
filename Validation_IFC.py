@@ -125,8 +125,10 @@ def main():
     cross_checks = load_cross_checks(CROSS_CHECKS_FILE)
     concepts = rules.concepts + cross_check_concepts(rules.concepts, cross_checks)
     if client == "statsbygg":
-        tfm_property = OLD_TFM_PROPERTY if version == "1.3" else TFM_PROPERTY
-        concepts += tfm_concepts(rules.concepts, tfm_code_lists(), tfm_property)
+        if version == "1.3":
+            concepts += tfm_concepts(rules.concepts, tfm_code_lists(), OLD_TFM_PROPERTY, "ns3457-7")
+        else:
+            concepts += tfm_concepts(rules.concepts, tfm_code_lists(), TFM_PROPERTY)
 
     results = validate(model, concepts, allowed)
     print_summary(results)
@@ -680,6 +682,84 @@ def pa0802_problems(code, codes):
     return problems
 
 
+# SIMBA 1.3 (project BIM manual 13.1 B-1 "Tverrfaglig merkesystem NS3457-TFM", from NS 3457-7 Figur 16):
+#   <SE09>++AUE=3600.014.04-SQZ0023%SQZ.008.03 (spaces around the signs allowed), with ==role and (info) optional,
+#   and the parts repeated in NOSSB_Reference (Tabell 15/16)
+NS3457_7_FORMAT = "<owner>++location=NNNN.nnn(.nn)-BBBnnnn%BBB.nnn(.nn)"
+NS3457_7_PARTS = re.compile(r"^(?:<(?P<owner>[^>]*)>)?\+\+(?P<location>[^=]*)=(?P<system>[^-]*)-(?P<component>[^%=(]*)"
+                            r"%(?P<type>[^=(]*)(?:==(?P<role>[^(]*))?(?:\((?P<info>[^)]*)\))?$")
+NS3457_7_SYSTEM = re.compile(r"^(\d{3,4})\.(\d{3})(?:\.(\d{2,3}))?$")
+NS3457_7_COMPONENT = re.compile(r"^([A-ZÆØÅ]{3})(\d{3,4})$")
+NS3457_7_TYPE = re.compile(r"^([A-ZÆØÅ]{3})\.(\d{3})(?:\.(\d{2,3}))?$")
+# NOSSB_Reference properties (Tabell 16)
+NS3457_7_PROPERTIES = ("RefComplex", "RefPriSysLoc", "RefSysClass", "RefSysNo", "RefSysSubNo",
+                       "RefCompClass", "RefCompNo", "RefCompClassNo1", "RefCompClassNo2")
+# Optional: the sub-numbers ("Valgfri"), the location parts, the system code and the type number
+NS3457_7_OPTIONAL = {"RefComplex", "RefPriSysLoc", "RefSysClass", "RefSysSubNo", "RefCompClassNo1", "RefCompClassNo2"}
+
+
+def ns3457_7_problems(code, codes=None):
+    """(problems, parts) for a SIMBA 1.3 TFM code; parts maps the NOSSB_Reference property names to the
+    code's parts (None for a part the code doesn't have), or is None when the code can't be read"""
+    codes = codes or TfmCodes()
+    problems = []
+    if re.search("[–—]", code):
+        problems.append("use - (hyphen), not – (dash)")
+        code = re.sub("[–—]", "-", code)
+    code = re.sub(r"\s+", "", code)
+    parts = NS3457_7_PARTS.match(code)
+    if not parts:
+        missing = [name for sign, name in (("++", "++location"), ("=", "=system"), ("-", "-component"), ("%", "%type"))
+                   if sign not in code]
+        if missing:
+            return problems + [f"missing {', '.join(missing)}; expected {NS3457_7_FORMAT}"], None
+        return problems + [f"parts in the wrong order; expected {NS3457_7_FORMAT}"], None
+
+    owner, location = parts["owner"], parts["location"]
+    if owner is not None and not owner:
+        problems.append("owner's ID <> is empty")
+    if not re.fullmatch(r"[A-Za-z0-9ÆØÅæøå.]+", location):
+        problems.append(f"location ++{location or '(empty)'} should be a location code, e.g. ++SE09 or <SE09>++AUE")
+    found = {"RefComplex": owner or location, "RefPriSysLoc": location if owner else None}
+
+    system = NS3457_7_SYSTEM.match(parts["system"])
+    if not system:
+        problems.append(f"system ={parts['system']} should be NNNN.nnn or NNNN.nnn.nn, e.g. =3600.014.04")
+    else:
+        found.update(RefSysClass=system.group(1), RefSysNo=system.group(2), RefSysSubNo=system.group(3))
+        if codes.ns3451 and len(system.group(1)) == 4 and system.group(1) not in codes.ns3451:
+            problems.append(f"system code {system.group(1)} is not in NS 3451")
+
+    component = NS3457_7_COMPONENT.match(parts["component"])
+    if not component:
+        problems.append(f"component -{parts['component']} should be 3 letters and a number, e.g. -SQZ0023")
+    else:
+        found.update(RefCompClass=component.group(1), RefCompNo=component.group(2))
+        if codes.ns3457 and component.group(1) not in codes.ns3457:
+            problems.append(f"component code {component.group(1)} is not in NS 3457-8")
+
+    kind = NS3457_7_TYPE.match(parts["type"])
+    if not kind:
+        problems.append(f"type %{parts['type']} should be BBB.nnn or BBB.nnn.nn, e.g. %SQZ.008.03")
+    else:
+        found.update(RefCompClassNo1=kind.group(2), RefCompClassNo2=kind.group(3))
+        if component and kind.group(1) != component.group(1):
+            problems.append(f"type code {kind.group(1)} differs from component code {component.group(1)}")
+
+    if parts["role"] is not None and not NS3457_7_COMPONENT.match(parts["role"]):
+        problems.append(f"special role =={parts['role']} should be 3 letters and a number, e.g. ==SQZ0001")
+    return problems, found
+
+
+def same_part(value, part, system_code=False):
+    """A NOSSB_Reference property and the RefString part it repeats: equal as text, or as numbers (14 and 014).
+    For the system code a 3-digit NS 3451 code also equals the 4-digit code that adds a 0 (265 and 2650)"""
+    value, part = value.strip(), part.strip()
+    if system_code and value.isdigit() and part.isdigit() and {len(value), len(part)} == {3, 4}:
+        return max(value, part, key=len) == min(value, part, key=len) + "0"
+    return value == part or (value.isdigit() and part.isdigit() and int(value) == int(part))
+
+
 def read_code_file(path, pattern):
     """Codes from an Excel or CSV file: every cell that starts with a code, e.g. "2310 Bærende ..." """
     texts = []
@@ -777,8 +857,10 @@ def tfm_code_lists(own_folder=TFM_CODES_FOLDER, statsbygg_folder=STATSBYGG_TFM_F
     return codes
 
 
-def tfm_concepts(concepts, codes=None, prop=TFM_PROPERTY):
-    """A TFM format check for every object group that requires the TFM property `prop`"""
+def tfm_concepts(concepts, codes=None, prop=TFM_PROPERTY, style="statsbygg"):
+    """A TFM format check for every object group that requires the TFM property `prop`. With style
+    "ns3457-7" (SIMBA 1.3) the code is checked as NS 3457-7, plus a check that the NOSSB_Reference
+    part properties are there and match it"""
     extra, seen = [], set()
     for concept in concepts:
         required = concept.required
@@ -789,6 +871,23 @@ def tfm_concepts(concepts, codes=None, prop=TFM_PROPERTY):
         seen.add(concept.scope())
         codes = codes or TfmCodes()
         lists = ", ".join(codes.names())
+        if style == "ns3457-7":
+            lists = ", ".join(name for name in codes.names() if name.startswith("NS "))
+            common = dict(entities=concept.entities, predefined=concept.predefined, filters=concept.filters)
+            extra.append(Concept(
+                concept.group, concept.entity, f"{prop[0]}.{prop[1]} TFM format", None, concept.applicability,
+                ("tfm", *prop, codes, "ns3457-7"), concept.required_by, **common,
+                description="TFM code as NS 3457-7 (SIMBA 1.3, BIM manual 13.1 B-1): <owner ID>++location="
+                            "system code.number(.sub)-component code and number%component code.type number(.sub), "
+                            "e.g. <SE09>++AUE=3600.014.04-SQZ0023%SQZ.008.03 (spaces allowed)"
+                            + (f". Codes are checked against {lists}." if lists else ".")))
+            extra.append(Concept(
+                concept.group, concept.entity, f"{prop[0]} parts match {prop[1]}", None, concept.applicability,
+                ("tfm", *prop, codes, "parts"), concept.required_by, **common,
+                description=f"The {prop[0]} properties {', '.join(NS3457_7_PROPERTIES)} are there and repeat the "
+                            f"parts of {prop[1]} (BIM manual Tabell 15/16). RefComplex, RefPriSysLoc, RefSysClass, RefSysSubNo, "
+                            "RefCompClassNo1 and RefCompClassNo2 are optional, but must match when there. RefPriSysLoc is compared only when the code has an owner ID (<SE09>++AUE)."))
+            continue
         extra.append(Concept(
             concept.group, concept.entity, f"{prop[0]}.{prop[1]} TFM format", None, concept.applicability,
             ("tfm", *prop, codes), concept.required_by,
@@ -868,12 +967,38 @@ class Checker:
     def check_tfm(self, concept, element):
         """TFM format: (passed, value with what is wrong), or None when the object has no TFM code
         (the property's own requirement already reports that)"""
-        _, pset, prop, codes = concept.required
+        _, pset, prop, codes, *style = concept.required
+        style = style[0] if style else "statsbygg"
         code = self.property_text(element, pset, prop)
         if code is None:
             return None
-        problems = tfm_problems(code, codes)
+        if style == "statsbygg":
+            problems = tfm_problems(code, codes)
+        elif style == "ns3457-7":
+            problems = ns3457_7_problems(code, codes)[0]
+        else:
+            problems = self.tfm_part_problems(element, pset, code, codes)
+            if problems is None:
+                return None  # the code can't be read; the format check reports it
         return (not problems, code + (f" ({'; '.join(problems)})" if problems else ""))
+
+    def tfm_part_problems(self, element, pset, code, codes):
+        """What doesn't match between a SIMBA 1.3 RefString and the NOSSB_Reference part properties"""
+        found = ns3457_7_problems(code, codes)[1]
+        if found is None:
+            return None
+        problems = []
+        for name in NS3457_7_PROPERTIES:
+            value, part = self.property_text(element, pset, name), found.get(name)
+            if value is None or not value.strip():
+                if name not in NS3457_7_OPTIONAL:
+                    problems.append(f"no {name}")
+            elif part is None:
+                if name != "RefPriSysLoc":  # without <owner> the code doesn't show the location code
+                    problems.append(f"{name} {value}, the code has none")
+            elif not same_part(value, part, name == "RefSysClass"):
+                problems.append(f"{name} {value}, the code has {part}")
+        return problems
 
     def evaluate(self, node, element):
         kind, children = node
