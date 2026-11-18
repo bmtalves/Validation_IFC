@@ -929,8 +929,9 @@ class Checker:
                 continue
             if atom.metric == "Exists" and (nominal is not None) != (atom.value.upper() == "TRUE"):
                 return False
-            if atom.metric == "Type" and (nominal is None or nominal.is_a().upper() != atom.value.upper()):
-                return False
+            if atom.metric == "Type" and (nominal is None or not same_type(nominal.is_a(), atom.value)):
+                if date_text_problem(names["Set"], names["PropertyName"], nominal) != "":
+                    return False
             if atom.metric == "Value" and (nominal is None or not value_matches(nominal.wrappedValue, atom)):
                 return False
 
@@ -959,6 +960,9 @@ class Checker:
                     text = display_value(nominal.wrappedValue)
                     if ifc_type and nominal.is_a().upper() != ifc_type.upper():
                         text += f" ({nominal.is_a()})"
+                        problem = date_text_problem(pset, prop, nominal)
+                        if problem:
+                            text += f" ({problem})"
                     return text
             return None
 
@@ -1071,6 +1075,37 @@ def positioning_facts(model):
             "CRSName": crs.Name if crs else None,
         })
     return facts
+
+
+# IfcLabel, IfcText and IfcIdentifier are all plain text in IFC; a model using one where the
+# rules name another still has the information, so they count as the same type
+TEXT_TYPES = {"IFCLABEL", "IFCTEXT", "IFCIDENTIFIER"}
+
+
+def same_type(found, required):
+    found, required = found.upper(), required.upper()
+    return found == required or (found in TEXT_TYPES and required in TEXT_TYPES)
+
+
+# Dates that may be given as text instead of the type the rules name, and the text's format
+DATE_TEXT_PROPERTIES = {("NOSSB_Process", "DesignedStatusDate"): "YYYY.MM.DD"}
+
+
+def date_text_problem(pset, prop, nominal):
+    """For a date property given as text: "" if the text is a real date in the format, else what is wrong.
+    None if the property isn't one of DATE_TEXT_PROPERTIES or the value isn't text"""
+    fmt = DATE_TEXT_PROPERTIES.get((pset, prop))
+    if not fmt or nominal is None or nominal.is_a().upper() not in TEXT_TYPES:
+        return None
+    text = str(nominal.wrappedValue).strip()
+    match = re.fullmatch(r"(\d{4})\.(\d{2})\.(\d{2})", text)
+    if not match:
+        return f"should be a date as {fmt}"
+    try:
+        datetime(*map(int, match.groups()))
+    except ValueError:
+        return "not a real date"
+    return ""
 
 
 def in_range(nominal):

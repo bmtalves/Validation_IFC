@@ -98,7 +98,7 @@ You can answer the other prompts with the first letter (`c`, `h`, `b`, `n`).
 | SIMBA 1.3 | IFC2X3 | `NOSSB_Process.DesignedStatus`, `NOSSB_Reference.RefString` … | Statsbygg's SIMBA 1.3 mvdXML files (`…simba-1-3…`), e.g. `statsbygg-project-1011301-vtm-simba-1-3_ifc-2x3-tc1_b4-1_architect-ark.mvdxml` (B4.1.9, ARK) |
 | SIMBA 2.1 | IFC4 | `NONS_Process.ProcessStatus`, `NONS_Reference.RefString` … | the SIMBA 2.1 mvdXML and IDS files |
 
-The types are checked as the rules say: SIMBA 1.3 and 2.1 ask for `DesignedStatus`/`ProcessStatus` and `RefString` as IfcLabel, so an old model that stores them as IfcText fails those requirements (the value is shown with its type, e.g. `375 (IfcText)`).
+SIMBA 1.3 and 2.1 ask for `DesignedStatus`/`ProcessStatus` and `RefString` as IfcLabel. A model that stores them as IfcText passes, since the [text types count as the same](#how-the-rules-are-interpreted); the value is shown with its type, e.g. `375 (IfcText)`. SIMBA 1.3 asks for `DesignedStatusDate` as IfcTimeMeasure (a number); a text date is accepted too, if it is a real date written `YYYY.MM.DD`, e.g. `2023.11.17`.
 
 ## Allowed values
 
@@ -179,7 +179,7 @@ Every check gets one of three statuses:
 | Status | Meaning |
 |---|---|
 | **Passed** | The value is there and valid. |
-| **Failed** | There is a value, but it is wrong: the wrong value type (e.g. text instead of a boolean), not on the allowed list, outside IFC's limits, or not matching a cross-check or the TFM format. |
+| **Failed** | There is a value, but it is wrong: the wrong value type (e.g. text instead of a boolean; IfcText, IfcLabel and IfcIdentifier count as the same), not on the allowed list, outside IFC's limits, or not matching a cross-check or the TFM format. |
 | **Missing** | There is no value at all: the property, attribute, type or georeferencing is not in the model. |
 
 The CSV's `Validation` column shows `PASSED`, `FAILED` or `MISSING`. The dashboard shows them in green, red and yellow, each with its own icon.
@@ -224,6 +224,8 @@ Each mvdXML file has *concept roots* (object groups such as `200 Wall`), each wi
 
 ### How the rules are interpreted
 
+- **Text types:** IfcLabel, IfcText and IfcIdentifier are all plain text in IFC, so a value of any of them passes where the rules ask for another one. It is still shown with its type, e.g. `375 (IfcText)`, so it can be fixed. Other types must match exactly.
+- **Dates as text:** `NOSSB_Process.DesignedStatusDate` may be text instead of IfcTimeMeasure, but then it must be a real date written `YYYY.MM.DD`. Otherwise it fails with the reason, e.g. `2023-05-12 (IfcText) (should be a date as YYYY.MM.DD)` or `2023.13.01 (IfcText) (not a real date)`. Add other properties to `DATE_TEXT_PROPERTIES` in the script to treat them the same way.
 - **Inherited properties:** a property on the object's type counts, unless the object has the same property itself. In that case the object's own value is the one checked, so a wrong type or an empty value on the object fails even if the type is correct. This follows the `nor` rules in the mvdXML.
 - **Example values:** some Statsbygg rules contain example values, e.g. project name `'1234567'` or building name `'Building name'`. For free-text attributes these are treated as "must be filled in", not "must equal this text".
 - **`NOTDEFINED`:** a PredefinedType of `NOTDEFINED` counts as not set, so the type's PredefinedType is used, as IFC intends.
@@ -312,7 +314,7 @@ The tests build small IFC4 models in memory and cover:
 
 - reading the rules (mvdXML and IDS)
 - property inheritance from types
-- wrong value types
+- wrong value types, text types counting as the same, and dates as YYYY.MM.DD text
 - PredefinedType
 - SIMBA versions: reading the version from file names, the version prompt, the SIMBA 1.3 file
 - the dashboard data

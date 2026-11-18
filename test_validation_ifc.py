@@ -72,6 +72,40 @@ def test_wrong_value_type_on_element_fails():
     assert Checker(model).evaluate(IS_EXTERNAL, typed_wall) == False
 
 
+def test_text_types_count_as_the_same():
+    model, typed_wall, lone_wall = make_model()
+    write_property(model, typed_wall, "NONS_Process", "ProcessStatus", "IFCTEXT", "300")
+    write_property(model, lone_wall, "NONS_Process", "ProcessStatus", "IFCREAL", 300.0)
+    checker = Checker(model)
+    assert checker.evaluate(PROCESS_STATUS, typed_wall) == True   # IfcText where IfcLabel is asked
+    assert checker.evaluate(PROCESS_STATUS, lone_wall) == False   # a number is still the wrong type
+    concept = Concept("200 Wall", "IfcWall", "NONS_Process.ProcessStatus", PROCESS_STATUS, None,
+                      ("property", "NONS_Process", "ProcessStatus", "IFCLABEL"))
+    results = {r.element.Name: (r.status, r.value) for r in validate(model, [concept])}
+    assert results["AVA.001"] == ("passed", "300 (IfcText)")
+    assert results["AVA.002"][0] == "failed"
+
+
+def test_designed_status_date_as_text():
+    model, typed_wall, lone_wall = make_model()
+    rule = ("rule", parse_parameters("Set[Value]='NOSSB_Process' AND PropertyName[Value]='DesignedStatusDate' "
+                                     "AND Value[Exists]=TRUE AND Value[Type]='IFCTIMEMEASURE'"))
+    concept = Concept("200 Wall", "IfcWall", "NOSSB_Process.DesignedStatusDate", rule, None,
+                      ("property", "NOSSB_Process", "DesignedStatusDate", "IFCTIMEMEASURE"))
+
+    def result(value):
+        write_property(model, typed_wall, "NOSSB_Process", "DesignedStatusDate", "IFCTEXT", value)
+        return next((r.status, r.value) for r in validate(model, [concept]) if r.element == typed_wall)
+
+    assert result("2023.11.17") == ("passed", "2023.11.17 (IfcText)")
+    assert result("2023-05-12") == ("failed", "2023-05-12 (IfcText) (should be a date as YYYY.MM.DD)")
+    assert result("10.11.2023") == ("failed", "10.11.2023 (IfcText) (should be a date as YYYY.MM.DD)")
+    assert result("2023.13.01") == ("failed", "2023.13.01 (IfcText) (not a real date)")
+    # A number is still checked as the rules say
+    write_property(model, lone_wall, "NOSSB_Process", "DesignedStatusDate", "IFCREAL", 5.0)
+    assert Checker(model).evaluate(rule, lone_wall) == False
+
+
 def test_predefined_type():
     model, typed_wall, lone_wall = make_model()
     checker = Checker(model)
