@@ -518,9 +518,12 @@ $("phase").textContent = DATA.phase;
 if (DATA.title) { $("title").textContent = DATA.title; document.title = `${DATA.title} – ${DATA.model}`; }
 const meta = $("meta");
 meta.append(el("span", {}, "Model ", el("b", { text: DATA.model })));
+// The schema the rules ask for (SIMBA 1.3: IFC2X3, SIMBA 2.x: IFC4); older reports without it assume IFC4
+const requiredSchema = "required_schema" in DATA ? DATA.required_schema : (DATA.client === "oslobygg" ? null : "IFC4");
+const schemaOk = !requiredSchema || DATA.schema === requiredSchema;
 const schemaBadge = el("span", { class: "badge" },
-  el("span", { class: "dot", style: `background:${DATA.schema === "IFC4" || DATA.client === "oslobygg" ? "var(--good)" : "var(--warning)"}` }),
-  DATA.schema === "IFC4" || DATA.client === "oslobygg" ? DATA.schema : `${DATA.schema} — Statsbygg requires IFC4`);
+  el("span", { class: "dot", style: `background:${schemaOk ? "var(--good)" : "var(--warning)"}` }),
+  schemaOk ? DATA.schema : `${DATA.schema} — ${DATA.title.replace(/ validation$/, "")} requires ${requiredSchema}`);
 meta.append(schemaBadge);
 meta.append(el("span", { text: DATA.generated }));
 

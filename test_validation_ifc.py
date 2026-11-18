@@ -1,11 +1,12 @@
 import csv
+from pathlib import Path
 
 import pytest
 import ifcopenshell
 import ifcopenshell.api
 
 import Validation_IFC
-from Validation_IFC import Atom, Checker, find_required, get_arguments, make_label, parse_parameters, write_property, find_old_status
+from Validation_IFC import Atom, Checker, find_required, get_arguments, make_label, parse_parameters, write_property
 from Validation_IFC import Concept, validate, dashboard_data, find_rule_files, load_allowed_values
 
 PROCESS_STATUS = ("rule", parse_parameters(
@@ -78,24 +79,36 @@ def test_predefined_type():
     assert checker.evaluate(PREDEFINED_TYPE, lone_wall) == False
 
 
-def test_find_old_status():
-    model, typed_wall, lone_wall = make_model()
-    write_property(model, typed_wall, "NOSSB_Process", "DesignedStatus", "IFCLABEL", "400")
-    write_property(model, lone_wall, "NOSSB_Process", "DesignedStatus", "IFCLABEL", "300")
-    write_property(model, lone_wall, "NONS_Process", "ProcessStatus", "IFCLABEL", "Godkjent")
-    # lone_wall already has a ProcessStatus, so it must not be overwritten
-    assert find_old_status(model) == [(typed_wall, "400")]
+# ---------- SIMBA versions ----------
+
+def test_simba_version_of():
+    version = Validation_IFC.simba_version_of
+    assert version(Path("statsbygg-project-1011301-vtm-simba-1-3_ifc-2x3-tc1_b4-1_architect-ark.mvdxml")) == "1.3"
+    assert version(Path("SIMBA-2.1-kravsett-ALLE-FAG-IDS-096/statsbygg-template_b3-1-architectural.ids")) == "2.1"
+    assert version(Path("my own rules.ids")) == "2.1"
 
 
-def test_migrate_designed_status(monkeypatch):
-    model, typed_wall, lone_wall = make_model()
-    write_property(model, typed_wall, "NOSSB_Process", "DesignedStatus", "IFCLABEL", "350")
-    monkeypatch.setattr(Validation_IFC, "ask_yes_no", lambda prompt: True)
-    assert Validation_IFC.migrate_designed_status(model) == True
-    assert Checker(model).evaluate(PROCESS_STATUS, typed_wall) == True
-    assert Checker(model).evaluate(PROCESS_STATUS, lone_wall) == False
-    # Nothing left to copy the second time
-    assert Validation_IFC.migrate_designed_status(model) == False
+def test_choose_simba_version(monkeypatch):
+    model, typed_wall, _ = make_model()
+    files = [Path("x_simba-1-3_b4-1.mvdxml"), Path("x_simba-2-1_b4-1.mvdxml"), Path("y_simba-2-1_b5-1.ids")]
+    labels = []
+    monkeypatch.setattr(Validation_IFC, "ask_number", lambda prompt, options: labels.extend(options) or 0)
+    assert Validation_IFC.choose_simba_version(model, files) == ("1.3", [files[0]])
+    assert labels == ["SIMBA 1.3 (IFC2X3)", "SIMBA 2.1 (IFC4)"]
+    # Only one version: no question
+    assert Validation_IFC.choose_simba_version(model, files[1:]) == ("2.1", files[1:])
+    assert len(labels) == 2
+
+
+def test_simba_13_rules_shipped():
+    path = Validation_IFC.TOOL_FOLDER / "statsbygg-project-1011301-vtm-simba-1-3_ifc-2x3-tc1_b4-1_architect-ark.mvdxml"
+    if not path.exists():
+        pytest.skip("SIMBA 1.3 rules not in the folder")
+    exchange_requirements, concepts = Validation_IFC.load_rules(path)
+    assert list(exchange_requirements.values()) == ["B4.1.9 Coordinated design (B4.1 Detaljprosjekt) .9"]
+    labels = {c.label for c in concepts}
+    assert {"NOSSB_Process.DesignedStatus", "NOSSB_Reference.RefString"} <= labels
+    assert Validation_IFC.tfm_concepts(concepts, prop=("NOSSB_Reference", "RefString"))
 
 
 def test_dashboard_data():

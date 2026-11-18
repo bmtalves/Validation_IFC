@@ -30,6 +30,9 @@ TFM_CODES_FOLDER = TOOL_FOLDER / "TFM codes"
 STATSBYGG_TFM_FOLDER = TOOL_FOLDER / "Statsbygg TFM"
 # The property holding the TFM code in SIMBA 2.1 (NONS10102)
 TFM_PROPERTY = ("NONS_Reference", "RefString")
+# SIMBA 1.3 has the TFM code in the old NOSSB_ property set
+OLD_TFM_PROPERTY = ("NOSSB_Reference", "RefString")
+SIMBA_SCHEMAS = {"1.3": "IFC2X3", "2.1": "IFC4"}
 # Statsbygg's IDS files are named ..._b3-1-architectural.ids, ..._b3-1_environmental_material.ids
 IDS_FILE_NAME = re.compile(r"_b(\d)-(\d)[-_]([a-z_]+)\.ids$", re.IGNORECASE)
 # Oslobygg's are named oslobygg_2-forprosjekt_ark.ids (the number keeps the phases in order)
@@ -105,8 +108,12 @@ def main():
     model_path, rules_path = get_arguments(sys.argv)
     model = load_model(model_path)
     client, rule_files = choose_client(rules_path)
-    if client == "statsbygg" and model.schema != "IFC4":
-        print(f"Warning: Statsbygg requires IFC4, this model is {model.schema}")
+    version = None
+    if client == "statsbygg":
+        version, rule_files = choose_simba_version(model, rule_files)
+        schema = SIMBA_SCHEMAS.get(version, "IFC4")
+        if model.schema != schema:
+            print(f"Warning: SIMBA {version} requires {schema}, this model is {model.schema}")
 
     rules = choose_rules(rule_files)
     rules.client = client
@@ -118,26 +125,22 @@ def main():
     cross_checks = load_cross_checks(CROSS_CHECKS_FILE)
     concepts = rules.concepts + cross_check_concepts(rules.concepts, cross_checks)
     if client == "statsbygg":
-        concepts += tfm_concepts(rules.concepts, tfm_code_lists())
-    # Copying the old DesignedStatus is a SIMBA 2.0 -> 2.1 step
-    changed = migrate_designed_status(model) if client == "statsbygg" else False
+        tfm_property = OLD_TFM_PROPERTY if version == "1.3" else TFM_PROPERTY
+        concepts += tfm_concepts(rules.concepts, tfm_code_lists(), tfm_property)
 
     results = validate(model, concepts, allowed)
     print_summary(results)
     phase = rules.phase
 
-    report_name = f"validation {Path(model_path).stem} {rules.short}"
+    simba = f"SIMBA {version} " if version else ""
+    report_name = f"validation {Path(model_path).stem} {simba}{rules.short}"
     report = ask_option("Export a report?", ["csv", "html dashboard", "both", "no"])
     if report in ("csv", "both"):
         export_csv(results, f"{report_name}.csv")
         print(f"File saved as {report_name}.csv")
     if report in ("html dashboard", "both"):
-        export_dashboard(results, model, model_path, phase, f"{report_name}.html", allowed, client)
-
-    if changed:
-        save_file(model, model_path)
-    else:
-        print("Program finished.")
+        export_dashboard(results, model, model_path, phase, f"{report_name}.html", allowed, client, version)
+    print("Program finished.")
 
 
 def get_arguments(argv):
@@ -192,6 +195,35 @@ def choose_client(rules_path=None):
     else:
         client = ask_option("Rules for which client?", list(found))
     return client, found[client]
+
+
+def simba_version_of(path):
+    """"1.3" or "2.1" from a Statsbygg file or folder name (..._simba-1-3_..., SIMBA-2.1-kravsett-...); 2.1 if none"""
+    for name in (Path(path).name, Path(path).parent.name):
+        match = re.search(r"simba[-_ ]?(\d)[-_.](\d)", name, re.I)
+        if match:
+            return f"{match.group(1)}.{match.group(2)}"
+    return "2.1"
+
+
+def choose_simba_version(model, rule_files):
+    """(version, rule files): which SIMBA version to validate against, among those with rules files"""
+    by_version = {}
+    for path in rule_files:
+        by_version.setdefault(simba_version_of(path), []).append(path)
+    versions = sorted(by_version)
+    psets = {pset.Name.split("_")[0] for pset in model.by_type("IfcPropertySet") if pset.Name}
+    found = [name for name, prefix in (("SIMBA 1.3 property sets (NOSSB_)", "NOSSB"),
+                                       ("SIMBA 2.1 property sets (NONS_)", "NONS")) if prefix in psets]
+    if found:
+        print(f"This model is {model.schema} and has {' and '.join(found)}")
+    if len(versions) == 1:
+        version = versions[0]
+    else:
+        print("SIMBA versions:")
+        labels = [f"SIMBA {v} ({SIMBA_SCHEMAS.get(v, 'IFC4')})" for v in versions]
+        version = versions[ask_number("Validate against", labels)]
+    return version, by_version[version]
 
 
 def load_model(path):
@@ -745,12 +777,12 @@ def tfm_code_lists(own_folder=TFM_CODES_FOLDER, statsbygg_folder=STATSBYGG_TFM_F
     return codes
 
 
-def tfm_concepts(concepts, codes=None):
-    """A TFM format check for every object group that requires the TFM property"""
+def tfm_concepts(concepts, codes=None, prop=TFM_PROPERTY):
+    """A TFM format check for every object group that requires the TFM property `prop`"""
     extra, seen = [], set()
     for concept in concepts:
         required = concept.required
-        if not (required and required[0] == "property" and (required[1], required[2]) == TFM_PROPERTY):
+        if not (required and required[0] == "property" and (required[1], required[2]) == tuple(prop)):
             continue
         if concept.scope() in seen:
             continue
@@ -758,8 +790,8 @@ def tfm_concepts(concepts, codes=None):
         codes = codes or TfmCodes()
         lists = ", ".join(codes.names())
         extra.append(Concept(
-            concept.group, concept.entity, f"{TFM_PROPERTY[0]}.{TFM_PROPERTY[1]} TFM format", None, concept.applicability,
-            ("tfm", *TFM_PROPERTY, codes), concept.required_by,
+            concept.group, concept.entity, f"{prop[0]}.{prop[1]} TFM format", None, concept.applicability,
+            ("tfm", *prop, codes), concept.required_by,
             entities=concept.entities, predefined=concept.predefined, filters=concept.filters,
             description="TFM code in one of Statsbygg's formats. PA 0805 (NS-TFM): "
                         "++building number=system code.number(.sub)-component%type, e.g. ++123456=3600.001.04-RTA001%RTA.001.002. "
@@ -1191,7 +1223,7 @@ def storeys(model):
             for s in ordered]
 
 
-def dashboard_data(results, model, model_path, phase, allowed=None, client="statsbygg"):
+def dashboard_data(results, model, model_path, phase, allowed=None, client="statsbygg", version=None):
     requirements = {}
     objects = {}
     values = {}
@@ -1237,7 +1269,8 @@ def dashboard_data(results, model, model_path, phase, allowed=None, client="stat
     return {
         "model": Path(model_path).name,
         "client": client,
-        "title": f"{CLIENT_NAMES.get(client, client)} validation",
+        "title": f"SIMBA {version} validation" if version else f"{CLIENT_NAMES.get(client, client)} validation",
+        "required_schema": SIMBA_SCHEMAS.get(version or "2.1", "IFC4") if client == "statsbygg" else None,
         "schema": model.schema,
         "phase": phase,
         "generated": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -1249,42 +1282,15 @@ def dashboard_data(results, model, model_path, phase, allowed=None, client="stat
     }
 
 
-def export_dashboard(results, model, model_path, phase, filename, allowed=None, client="statsbygg"):
+def export_dashboard(results, model, model_path, phase, filename, allowed=None, client="statsbygg", version=None):
     if not DASHBOARD_TEMPLATE.exists():
         print(f"Dashboard not saved: {DASHBOARD_TEMPLATE.name} must be in the same folder as this script")
         return
-    data = json.dumps(dashboard_data(results, model, model_path, phase, allowed, client))
+    data = json.dumps(dashboard_data(results, model, model_path, phase, allowed, client, version))
     # "</" would end the <script> block early if an object name contained "</script>"
     html = DASHBOARD_TEMPLATE.read_text(encoding="utf-8").replace("/*DATA*/null", data.replace("</", "<\\/"))
     Path(filename).write_text(html, encoding="utf-8")
     print(f"Dashboard saved as {filename}")
-
-
-# ---------- Copying old status values ----------
-
-def find_old_status(model):
-    """Objects with the pre-SIMBA 2.1 NOSSB_Process.DesignedStatus but no NONS_Process.ProcessStatus.
-    Returns [(element, value)]; values from the element's type count too"""
-    found = []
-    for element in model.by_type("IfcObject"):
-        old = ifcopenshell.util.element.get_pset(element, "NOSSB_Process", "DesignedStatus")
-        new = ifcopenshell.util.element.get_pset(element, "NONS_Process", "ProcessStatus")
-        if old not in (None, "") and new in (None, ""):
-            found.append((element, str(old)))
-    return found
-
-
-def migrate_designed_status(model):
-    to_copy = find_old_status(model)
-    if not to_copy:
-        return False
-    print(f"\n{len(to_copy)} object(s) have the old NOSSB_Process.DesignedStatus but no NONS_Process.ProcessStatus")
-    if not ask_yes_no("Copy DesignedStatus into ProcessStatus?"):
-        return False
-    for element, value in to_copy:
-        write_property(model, element, "NONS_Process", "ProcessStatus", "IFCLABEL", value)
-    print(f"Copied on {len(to_copy)} object(s). The old NOSSB_Process values are kept.")
-    return True
 
 
 def write_property(model, element, pset_name, prop_name, ifc_type, value):
@@ -1372,18 +1378,6 @@ def ask_option(prompt, options):
             if answer and option.startswith(answer):
                 return option
 
-
-def ask_yes_no(prompt):
-    return ask_option(prompt, ["yes", "no"]) == "yes"
-
-
-def save_file(model, model_path):
-    if ask_yes_no("Save as new file?"):
-        default = f"{Path(model_path).stem}_updated"
-        new_name = input(f"Input new name [{default}]: ").strip().removesuffix(".ifc") or default
-        model.write(f"{new_name}.ifc")
-        print(f"File saved as {new_name}.ifc")
-    print("Thank you for using the program")
 
 
 if __name__ == "__main__":

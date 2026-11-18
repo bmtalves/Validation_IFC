@@ -13,9 +13,8 @@ The tool has no property names written into it, so a new release of the rule fil
 
 1. **Validates** the model against one delivery phase: B3.1 Skisseprosjekt, B3.2 Forprosjekt, B4.1 Detaljprosjekt or B5.1 Ferdigstillelse.
 2. **Reports** the results as a CSV file, an HTML dashboard, or both.
-3. **Copies old status values:** if the model still uses `NOSSB_Process.DesignedStatus`, the tool offers to copy it into the new `NONS_Process.ProcessStatus`, and then saves the result as a new IFC file. The original file is never changed.
 
-The tool doesn't let you edit other values. Missing or wrong information has to be fixed in the authoring tool, using the report to find it.
+For Statsbygg it validates against the SIMBA version you choose (1.3 or 2.1), so older models are checked with the property names they were made with. The tool never changes the model. Missing or wrong information has to be fixed in the authoring tool, using the report to find it.
 
 ## Installation
 
@@ -45,7 +44,17 @@ If there are rules for both clients, the tool first asks whose to check against:
 Rules for which client? (statsbygg/oslobygg)
 ```
 
-For SIMBA, if both formats are there, it then asks which to use:
+For Statsbygg it then asks which SIMBA version to check against, after saying which property sets the model has:
+
+```
+This model is IFC4 and has SIMBA 1.3 property sets (NOSSB_)
+SIMBA versions:
+  1. SIMBA 1.3 (IFC2X3)
+  2. SIMBA 2.1 (IFC4)
+Validate against (1-2):
+```
+
+See [SIMBA versions](#simba-versions). If both formats are there for that version, it then asks which to use:
 
 ```
 Rules format? mvdXML has the .1/.5/.9 steps, IDS covers every discipline (mvdxml/ids)
@@ -76,12 +85,20 @@ python Validation_IFC.py model.ifc rules.ids
 
 | Step | Prompt | Notes |
 |---|---|---|
-| Old status values | `Copy DesignedStatus into ProcessStatus?` | SIMBA only. Shown only if the model has `NOSSB_Process.DesignedStatus`. Objects that already have a ProcessStatus are skipped, and the old values are kept. |
+| SIMBA version | `Validate against (1-2):` | Statsbygg only, and only when there are rules files for more than one version. The versions come from the files' names (`…simba-1-3…`, `…simba-2-1…`). A schema other than the version's (IFC2X3 for 1.3, IFC4 for 2.1) gives a warning. |
 | Summary | – | One `OK` / `FAIL` line per requirement with the number of failed and missing objects. |
-| Report | `Export a report? (csv/html dashboard/both/no)` | Files are named `validation <model> <phase>.csv` / `.html`, e.g. `validation house B5.1.1.csv` (mvdXML) or `validation house B5.1 architectural.csv` (IDS), and `validation house Forprosjekt ARK.csv` for Oslobygg. The CSV has one row per object and requirement, with the value found and its status. |
-| Save | `Save as new file?` | Only shown if status values were copied. Default name is `<model>_updated.ifc`. |
+| Report | `Export a report? (csv/html dashboard/both/no)` | Files are named `validation <model> SIMBA <version> <phase>.csv` / `.html`, e.g. `validation house SIMBA 2.1 B5.1.1.csv` (mvdXML) or `validation house SIMBA 2.1 B5.1 architectural.csv` (IDS), and `validation house Forprosjekt ARK.csv` for Oslobygg. The CSV has one row per object and requirement, with the value found and its status. |
 
-You can answer prompts with the first letter (`y`, `n`, `c`, `h`, `b`).
+You can answer the other prompts with the first letter (`c`, `h`, `b`, `n`).
+
+## SIMBA versions
+
+| Version | Schema | Property sets | Rules used |
+|---|---|---|---|
+| SIMBA 1.3 | IFC2X3 | `NOSSB_Process.DesignedStatus`, `NOSSB_Reference.RefString` … | Statsbygg's SIMBA 1.3 mvdXML files (`…simba-1-3…`), e.g. `statsbygg-project-1011301-vtm-simba-1-3_ifc-2x3-tc1_b4-1_architect-ark.mvdxml` (B4.1.9, ARK) |
+| SIMBA 2.1 | IFC4 | `NONS_Process.ProcessStatus`, `NONS_Reference.RefString` … | the SIMBA 2.1 mvdXML and IDS files |
+
+The types are checked as the rules say: SIMBA 1.3 and 2.1 ask for `DesignedStatus`/`ProcessStatus` and `RefString` as IfcLabel, so an old model that stores them as IfcText fails those requirements (the value is shown with its type, e.g. `375 (IfcText)`).
 
 ## Allowed values
 
@@ -212,7 +229,7 @@ Each mvdXML file has *concept roots* (object groups such as `200 Wall`), each wi
 - **`NOTDEFINED`:** a PredefinedType of `NOTDEFINED` counts as not set, so the type's PredefinedType is used, as IFC intends.
 - **Subgroups:** groups such as *Covering Ceiling*, *Covering Flooring* and *Transport Element Elevator* only apply to objects with that PredefinedType. An object can be checked under both the general group and its subgroup.
 - **Site requirements:** the rules only apply the site checks when the model is georeferenced with `EPSG:5555`, so models without it get no site checks.
-- **Model schema:** SIMBA 2.1 requires IFC4. Other schemas are still validated, with a warning.
+- **Model schema:** SIMBA 2.1 requires IFC4 and SIMBA 1.3 IFC2X3. Other schemas are still validated, with a warning.
 
 ### How the IDS files are interpreted
 
@@ -255,7 +272,7 @@ Added to every phase, from the *Felles* tab and the BIM-manual:
 | Romnummer | IfcSpace Name | 9 characters, e.g. `01-E01001` (manual 5.4.1) |
 | Romnavn | IfcSpace LongName | filled in |
 
-The converted files are the tool's reading of the matrix, not official Oslobygg files. The manual says the matrix is guidance and each project fixes its own requirements in its BIM gjennomføringsplan, so edit the IDS files (or `OBJECTS` in the script) to match the project. The SIMBA-only steps (copying DesignedStatus, the IFC4 warning) are skipped for Oslobygg; `allowed_values.csv` and `cross_checks.csv` apply to both.
+The converted files are the tool's reading of the matrix, not official Oslobygg files. The manual says the matrix is guidance and each project fixes its own requirements in its BIM gjennomføringsplan, so edit the IDS files (or `OBJECTS` in the script) to match the project. The SIMBA-only steps (the SIMBA version, the schema warning) are skipped for Oslobygg; `allowed_values.csv` and `cross_checks.csv` apply to both.
 
 ## Files
 
@@ -275,6 +292,7 @@ Validation_IFC/
     ├── statsbygg-template-simba-2-1-…_b3-2_architect-ark.mvdxml   B3.2 Forprosjekt
     ├── statsbygg-template-simba-2-1-…_b4-1_architect-ark.mvdxml   B4.1 Detaljprosjekt
     ├── statsbygg-template-simba-2-1-…_b5-1_architect-ark.mvdxml   B5.1 Ferdigstillelse
+    ├── statsbygg-project-1011301-vtm-simba-1-3_…_b4-1_architect-ark.mvdxml   SIMBA 1.3, B4.1.9
     └── SIMBA-2.1-kravsett-ALLE-FAG-IDS-096/                          44 IDS files: 4 phases × 11 disciplines
 └── Oslobygg Rules/
     ├── BIM egenskapsmatrise.xlsx      Oslobygg's property matrix (from skok.no)
@@ -282,7 +300,7 @@ Validation_IFC/
     └── oslobygg_1-konseptvalg_ark.ids … oslobygg_4-som_bygget_ark.ids
 ```
 
-Every `*.mvdxml` and `*.ids` file in `Simba Rules` (or next to `Validation_IFC.py`), and in folders one level inside them, is picked up automatically as SIMBA rules; those in `Oslobygg Rules` as Oslobygg rules.
+Every `*.mvdxml` and `*.ids` file in `Simba Rules` (or next to `Validation_IFC.py`), and in folders one level inside them, is picked up automatically as SIMBA rules; those in `Oslobygg Rules` as Oslobygg rules. The SIMBA version is read from the file or folder name (`simba-1-3`, `SIMBA-2.1`); files without one count as 2.1.
 
 ## Tests
 
@@ -296,7 +314,7 @@ The tests build small IFC4 models in memory and cover:
 - property inheritance from types
 - wrong value types
 - PredefinedType
-- copying old status values
+- SIMBA versions: reading the version from file names, the version prompt, the SIMBA 1.3 file
 - the dashboard data
 - allowed values and measure limits
 - cross-checks
@@ -309,7 +327,7 @@ The tests build small IFC4 models in memory and cover:
 
 - **Allowed values:** Statsbygg's mvdXML files contain no value lists and the IDS files only a few, so most text properties are only checked against the lists you put in `allowed_values.csv`.
 - **IDS:** no .1/.5/.9 steps and no PredefinedType or georeferencing checks (they aren't in the files), and 59 specifications without an applicability are skipped. Only the parts of IDS that Statsbygg's files use are read (entity, attribute and property facets).
-- **Old date not copied:** `NOSSB_Process.DesignedStatusDate` has no equivalent in SIMBA 2.1.
+- **SIMBA 1.3:** only the B4.1.9 ARK file is in the folder.
 - **3D model:** whoever opens the dashboard also needs the IFC file, and an internet connection for the viewer libraries. Large models need a computer with plenty of memory (each worker reads its own copy of the file, so a 300 MB model can use 1.5 GB or more while loading).
 - **Oslobygg:** only ARK so far. Room numbers are checked for their format, not for being unique. The file naming rule and NTM/NN2000 georeferencing in the BIM-manual aren't checked.
 - **Rule syntax:** only the mvdXML rule syntax used in the Statsbygg files is supported, not the full mvdXML standard.
